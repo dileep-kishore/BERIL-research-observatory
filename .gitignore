@@ -1,0 +1,55 @@
+# Environment and secrets
+.env
+*.env
+
+# Large data files
+*.npy
+*.pkl
+*.parquet
+*.h5
+*.hdf5
+
+# Large CSVs (keep small ones)
+supplementary_table_s1_all_species.csv
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Tree files (large)
+*.tree
+
+# Executed notebooks (keep source, ignore large executed versions)
+*_executed.ipynb
+
+# Temporary files
+tmp/
+*.tmp
+*.temp
+
+# Data directories (keep structure, ignore contents)
+data/**/*.csv
+data/**/*.npy
+data/**/*.pkl
+!data/.gitkeep
+projects/*/data/**/*.csv
+projects/*/data/**/*.npy
+projects/*/data/**/*.pkl
+!projects/*/data/.gitkeep
