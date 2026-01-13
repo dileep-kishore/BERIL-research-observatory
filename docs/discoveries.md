@@ -42,6 +42,41 @@ The 12 pangenomes without matching species clades are mostly obligate symbionts:
 
 These are valid pangenomes but filtered from species metadata due to single-genome status.
 
+### [cog_analysis] Universal functional partitioning in bacterial pangenomes
+
+Analysis of 32 species across 9 phyla (357,623 genes) reveals a remarkably consistent "two-speed genome":
+
+**Novel/singleton genes consistently enriched in:**
+- L (Mobile elements): +10.88% enrichment, 100% consistency across species - STRONGEST SIGNAL
+- V (Defense mechanisms): +2.83% enrichment, 100% consistency
+- S (Unknown function): +1.64% enrichment, 69% consistency
+
+**Core genes consistently enriched in:**
+- J (Translation): -4.65% enrichment, 97% consistency - STRONGEST DEPLETION
+- F (Nucleotide metabolism): -2.09% enrichment, 100% consistency
+- H (Coenzyme metabolism): -2.06% enrichment, 97% consistency
+- E (Amino acid metabolism): -1.81% enrichment, 81% consistency
+- C (Energy production): -1.75% enrichment, 88% consistency
+
+**Biological implications:**
+- Core genes = ancient, conserved "metabolic engine" (translation, energy, biosynthesis)
+- Novel genes = recent acquisitions for ecological adaptation (mobile elements, defense, niche-specific)
+- Horizontal gene transfer (HGT) is the primary innovation mechanism, not vertical inheritance
+- The massive L enrichment (+10.88%) suggests most genomic novelty comes from mobile elements
+- Patterns hold universally across bacterial phyla, suggesting deep evolutionary constraint
+
+**Hypothesis validation:** All 8 predictions from initial N. gonorrhoeae analysis confirmed across 32 species.
+
+This represents a fundamental organizing principle of bacterial pangenome structure.
+
+### [cog_analysis] Composite COG categories are biologically meaningful
+
+Multi-function genes with composite COG assignments (e.g., "LV" = mobile+defense, "EGP" = amino acid+carb+inorganic ion) are not annotation artifacts:
+
+- LV (mobile+defense): +0.34% enrichment, 76% consistency
+- Suggests functional modules like "mobile defense islands"
+- Should not be filtered out as noise - they represent genuine multi-functional genes
+
 ---
 
 ## Template

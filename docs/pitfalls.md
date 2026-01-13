@@ -7,23 +7,21 @@
 
 ## SQL Syntax Issues
 
-### The `--` Problem in Species IDs
+### The `--` Non-Issue in Species IDs
 
-Species clade IDs contain `--` which SQL interprets as a comment delimiter.
+Species clade IDs contain `--` (e.g., `s__Escherichia_coli--RS_GCF_000005845.2`), but this is **NOT a problem** in SQL when the ID is inside a quoted string literal.
 
 ```sql
--- BAD: Everything after '--' is treated as a comment
+-- CORRECT: The '--' inside quotes is NOT interpreted as a comment
 SELECT * FROM kbase_ke_pangenome.genome
 WHERE gtdb_species_clade_id = 's__Escherichia_coli--RS_GCF_000005845.2'
 
--- GOOD: Use LIKE pattern to avoid the issue
+-- AVOID: LIKE patterns are slower and unnecessary
 SELECT * FROM kbase_ke_pangenome.genome
 WHERE gtdb_species_clade_id LIKE 's__Escherichia_coli%'
-
--- GOOD: Or escape in Python before building query
-species_prefix = species_id.split('--')[0]
-query = f"WHERE gtdb_species_clade_id LIKE '{species_prefix}%'"
 ```
+
+**Note**: The `--` would only be a problem if it appeared outside of quotes in the SQL statement itself. When using exact equality with proper quoting, there is no issue and performance is better.
 
 ### ID Format Reference
 
@@ -169,6 +167,53 @@ LIMIT 5
 
 ---
 
+## Pandas-Specific Issues
+
+### NaN Handling When Mapping to Dictionaries
+
+**[cog_analysis]** When mapping COG categories to descriptions using a dictionary, composite categories (e.g., "LV", "EGP") will return NaN if not in the dictionary. String operations on NaN values will fail:
+
+```python
+# Dictionary only has single-letter COGs
+COG_DESCRIPTIONS = {
+    'J': 'Translation, ribosomal structure',
+    'L': 'Replication, recombination, repair',
+    # ... but no "LV", "EGP", etc.
+}
+
+# This will introduce NaN values for composite COGs
+df['description'] = df['COG_category'].map(COG_DESCRIPTIONS)
+
+# BAD: This will fail with TypeError on NaN values
+labels = [f"{row['COG_category']}: {row['description'][:40]}" for _, row in df.iterrows()]
+
+# GOOD: Check for NaN before string operations
+labels = []
+for _, row in df.iterrows():
+    desc = row['description'][:40] if pd.notna(row['description']) else 'Unknown'
+    labels.append(f"{row['COG_category']}: {desc}")
+```
+
+**Solution**: Always use `pd.notna()` or `pd.isna()` before string slicing or other operations on potentially-NaN columns.
+
+### Type Conversion from Spark .toPandas()
+
+Numeric columns from Spark can come through as strings when using `.toPandas()`:
+
+```python
+df = spark.sql("SELECT no_genomes, no_core FROM pangenome").toPandas()
+
+# BAD: Might fail with type error if columns are strings
+filtered = df[df['no_genomes'] <= 500]  # TypeError: '<=' not supported for str
+
+# GOOD: Explicitly convert to numeric
+numeric_cols = ['no_genomes', 'no_core', 'no_aux_genome']
+for col in numeric_cols:
+    df[col] = pd.to_numeric(df[col], errors='coerce')
+```
+
+---
+
 ## Missing Tables
 
 These tables are mentioned in project documentation but **do not exist** in the database:
@@ -211,7 +256,49 @@ result = spark.sql("""
     WHERE genome_id IN (...)
     GROUP BY genome_id
 """).toPandas()
+
+# IMPORTANT: Numeric columns may come back as strings
+# Convert them explicitly
+numeric_cols = ['n_genes', 'no_genomes', 'no_core']
+for col in numeric_cols:
+    if col in result.columns:
+        result[col] = pd.to_numeric(result[col], errors='coerce')
 ```
+
+### [cog_analysis] Multi-table joins can be slow for large species
+
+**Problem**: Joining gene → gene_genecluster_junction → gene_cluster → eggnog_mapper_annotations can be slow for species with >500 genomes.
+
+**Example with large species** (S. pneumoniae, 843 genomes):
+```sql
+SELECT gc.is_core, ann.COG_category, COUNT(*)
+FROM gene g
+JOIN gene_genecluster_junction j ON g.gene_id = j.gene_id
+JOIN gene_cluster gc ON j.gene_cluster_id = gc.gene_cluster_id
+LEFT JOIN eggnog_mapper_annotations ann ON g.gene_id = ann.query_name
+WHERE gc.gtdb_species_clade_id = 's__Streptococcus_pneumoniae--RS_GCF_001457635.1'
+GROUP BY gc.is_core, ann.COG_category
+-- May timeout via REST API
+```
+
+**Solutions**:
+1. **Use direct Spark**: Run on JupyterHub with `spark.sql()` instead of REST API
+2. **Separate queries per gene class**: Break into smaller queries
+```python
+for is_core in [0, 1]:
+    query = f"""
+        SELECT ann.COG_category, COUNT(*) as gene_count
+        FROM gene_cluster gc
+        JOIN gene_genecluster_junction j ON gc.gene_cluster_id = j.gene_cluster_id
+        JOIN eggnog_mapper_annotations ann ON j.gene_id = ann.query_name
+        WHERE gc.gtdb_species_clade_id = '{species_id}'
+          AND gc.is_core = {is_core}
+        GROUP BY ann.COG_category
+    """
+```
+3. **Select smaller species**: Use species with 100-300 genomes for faster queries
+
+**Performance tip**: Always use exact equality (`WHERE id = 'value'`) rather than `LIKE` patterns for best performance.
 
 ---
 
@@ -219,7 +306,7 @@ result = spark.sql("""
 
 Before running a query, verify:
 
-- [ ] Species IDs don't contain raw `--` in WHERE clauses
+- [ ] Using exact equality instead of LIKE patterns for performance
 - [ ] Large tables have appropriate filters (genome_id, species_id)
 - [ ] JOIN keys are correct (gene_cluster_id for annotations)
 - [ ] You're not comparing gene clusters across species

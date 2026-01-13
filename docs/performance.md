@@ -28,9 +28,55 @@
 
 ## Query Patterns
 
-### Pattern 1: Per-Species Iteration (Recommended)
+### Pattern 1: Single Query with IN Clause for Moderate Species Lists
 
-Most analyses should iterate over species rather than querying all data at once:
+**[cog_analysis]** For 10-100 species, a single query with IN clause outperforms sequential queries:
+
+```python
+# Get target species
+species_list = ['s__Species1--RS_GCF_123', 's__Species2--RS_GCF_456', ...]  # 32 species
+
+# Create IN clause
+species_in_clause = "', '".join(species_list)
+
+# Single query for all species
+query = f"""
+SELECT
+    gc.gtdb_species_clade_id,
+    gc.is_core,
+    ann.COG_category,
+    COUNT(*) as gene_count
+FROM kbase_ke_pangenome.gene_cluster gc
+JOIN kbase_ke_pangenome.gene_genecluster_junction j
+    ON gc.gene_cluster_id = j.gene_cluster_id
+JOIN kbase_ke_pangenome.eggnog_mapper_annotations ann
+    ON j.gene_id = ann.query_name
+WHERE gc.gtdb_species_clade_id IN ('{species_in_clause}')
+    AND ann.COG_category IS NOT NULL
+GROUP BY gc.gtdb_species_clade_id, gc.is_core, ann.COG_category
+"""
+
+result_df = spark.sql(query).toPandas()
+```
+
+**Performance**: For 32 species analyzing COG distributions:
+- Sequential queries (96 queries × 3 gene classes): ~30 minutes
+- Single IN clause query: ~6 minutes (5x speedup)
+
+**Key insight**: Let Spark handle parallelization internally rather than doing sequential queries. The overhead of 96 separate query round-trips dominates execution time, not the data transfer.
+
+**When to use**:
+- 10-100 species in your analysis
+- Each species has moderate data volume (<1M rows per species)
+- Query involves JOINs or aggregations
+
+**When NOT to use**:
+- >100 species (IN clause becomes unwieldy)
+- Species with >10K genomes each (use per-species iteration instead)
+
+### Pattern 2: Per-Species Iteration (For Large Species or Many Species)
+
+For very large species or >100 species total, iterate:
 
 ```python
 # Get target species list

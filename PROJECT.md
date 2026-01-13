@@ -20,6 +20,7 @@ When working on any science project, update `docs/` when you discover:
 | Data limitation or coverage gap | `docs/pitfalls.md` |
 | Useful insight about data structure | `docs/schema.md` |
 | Any other learning worth sharing | `docs/discoveries.md` |
+| Research idea or future direction | `docs/research_ideas.md` |
 
 **Tag each addition** with the project that uncovered it:
 ```markdown
@@ -36,6 +37,7 @@ Discovered that only 83K/293K genomes have embeddings...
 | `docs/pitfalls.md` | SQL gotchas, data sparsity, common errors |
 | `docs/performance.md` | Query strategies for large tables |
 | `docs/discoveries.md` | Running log of insights (low-friction capture) |
+| `docs/research_ideas.md` | Future research directions, project ideas, cross-project opportunities |
 
 ## Project Structure
 
@@ -47,6 +49,21 @@ Each science project in `projects/` should have:
 Current projects:
 - `projects/ecotype_analysis/` - Environment vs phylogeny effects on gene content
 - `projects/pangenome_openness/` - Open vs closed pangenome patterns
+- `projects/cog_analysis/` - COG functional category distributions across core/aux/novel genes
+
+## Data Organization
+
+| Location | What Goes There | Examples |
+|----------|-----------------|----------|
+| `data/` | Shared extracts reusable across projects | Pangenome stats for all species, genome metadata, species lists |
+| `projects/*/data/` | Project-specific processed data | Distance matrices for specific subsets, analysis outputs |
+
+**Rule of thumb**: If another project might need it, put it in top-level `data/`. If it's clearly for one question, keep it in the project.
+
+Examples:
+- All pangenome stats (27K species) → `data/pangenome_summary.csv`
+- ANI pairs for 224 target species → `data/ecotypes_expanded/` (reused by multiple projects)
+- Jaccard matrix for 172 species with embeddings → `projects/ecotype_analysis/data/` (specific to that analysis)
 
 ## Database Access
 
@@ -57,9 +74,30 @@ Current projects:
 
 Use `/berdl` skill for BERDL queries. Read `docs/pitfalls.md` before your first query.
 
+### Spark Notebooks
+
+**All analysis notebooks should use direct Spark access** on the BERDL JupyterHub for best performance.
+
+**Required initialization** at the top of every notebook:
+```python
+from get_spark_session import get_spark_session
+spark = get_spark_session()
+```
+
+Then query with:
+```python
+df = spark.sql("SELECT ... FROM kbase_ke_pangenome.table").toPandas()
+```
+
+**Benefits vs REST API**:
+- No timeouts on complex queries
+- Better performance on large joins
+- Full Spark SQL functionality
+- Can handle species with >500 genomes
+
 ## Key Reminders
 
-1. Species IDs contain `--` which breaks SQL. Use `LIKE 'prefix%'` patterns.
+1. Use exact equality for species IDs (e.g., `WHERE id = 's__Species--RS_GCF_123'`). The `--` inside quotes is fine.
 2. Large tables (gene, genome_ani) need filters. Never full-scan.
 3. AlphaEarth embeddings only cover 28% of genomes.
 4. Gene clusters are species-specific. Can't compare across species.

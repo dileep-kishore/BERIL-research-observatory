@@ -1,0 +1,4 @@
+{
+  "query": "SELECT * FROM kbase_ke_pangenome.gene_cluster WHERE gtdb_species_clade_id LIKE 's__Streptococcus_pneumoniae%' LIMIT 10",
+  "limit": 10
+}
