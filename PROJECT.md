@@ -95,6 +95,60 @@ df = spark.sql("SELECT ... FROM kbase_ke_pangenome.table").toPandas()
 - Full Spark SQL functionality
 - Can handle species with >500 genomes
 
+### JupyterHub Workflow
+
+**BERDL runs on Kubernetes/Rancher** - compute nodes are ephemeral pods, not persistent VMs. This means:
+- No direct SSH to compute nodes
+- No remote script execution
+- JupyterHub web UI is the designed interface
+
+**Typical workflow:**
+
+1. **Develop locally**
+   - Write/edit notebooks on your local machine
+   - Test logic with small datasets if possible
+   - Commit to git when ready
+
+2. **Upload to JupyterHub**
+   - Navigate to: `https://hub.berdl.kbase.us`
+   - Authenticate with MFA
+   - Upload notebook via Upload button (drag & drop)
+   - Place in appropriate directory (e.g., `~/workspace/projects/cog_analysis/`)
+
+3. **Run analysis**
+   - Open notebook in JupyterHub
+   - Verify Spark session initializes: `spark = get_spark_session()`
+   - Kernel → Restart & Run All (or run cells interactively)
+   - Monitor progress (typical runtime: 5-30 minutes for multi-species analyses)
+
+4. **Download results**
+   - Select output files in JupyterHub file browser (notebooks, CSVs, PNGs)
+   - Right-click → Download (or use Download button)
+   - Place in local `projects/*/data/` directory
+   - Commit visualizations and small data files to git
+
+**Current limitations:**
+- No programmatic notebook execution (must use web UI)
+- No completion notifications (must monitor manually)
+- File transfer is manual (acceptable for files <1GB)
+
+**Alternative for large files (>1GB):**
+- Use KBase login node as staging area:
+  ```bash
+  # In JupyterHub terminal
+  scp large_file.csv username@kbase-login-node:~/staging/
+
+  # On local machine
+  scp username@kbase-login-node:~/staging/large_file.csv ./
+  ```
+
+**Git-based alternative (for small files):**
+- Clone this repo in JupyterHub: `git clone <repo-url>`
+- Pull latest notebooks: `git pull`
+- After analysis, commit results: `git add notebooks/ data/` && `git commit` && `git push`
+- Pull on local machine: `git pull`
+- Note: Large data files are gitignored - use manual download for those
+
 ## Key Reminders
 
 1. Use exact equality for species IDs (e.g., `WHERE id = 's__Species--RS_GCF_123'`). The `--` inside quotes is fine.
