@@ -85,12 +85,18 @@
     <h2>Notebooks</h2>
     <div class="grid grid-2">
         {% for notebook in project.notebooks %}
-        <div class="card">
-            <code>{{ notebook.filename }}</code>
-            {% if notebook.title %}
-            <p class="text-muted text-small mt-4">{{ notebook.title }}</p>
-            {% endif %}
-        </div>
+        <a href="/projects/{{ project.id }}/notebooks/{{ notebook.filename }}" class="card" style="text-decoration: none;">
+            <div class="flex items-center gap-4">
+                <span style="font-size: 1.5rem; color: var(--accent-primary);">&#128196;</span>
+                <div>
+                    <code style="color: var(--text-primary);">{{ notebook.filename }}</code>
+                    {% if notebook.title %}
+                    <p class="text-muted text-small mt-4" style="margin-bottom: 0;">{{ notebook.title }}</p>
+                    {% endif %}
+                </div>
+            </div>
+            <p class="text-small mt-4" style="margin-bottom: 0; color: var(--text-link);">View notebook &rarr;</p>
+        </a>
         {% endfor %}
     </div>
 </section>

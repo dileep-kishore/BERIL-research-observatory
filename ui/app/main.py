@@ -1,5 +1,7 @@
 """Pangenome Research Observatory - FastAPI Application."""
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -99,6 +101,58 @@ async def project_detail(request: Request, project_id: str):
 
     context["project"] = project
     return templates.TemplateResponse("projects/detail.html", context)
+
+
+@app.get("/projects/{project_id}/notebooks/{notebook_name}", response_class=HTMLResponse)
+async def notebook_viewer(request: Request, project_id: str, notebook_name: str):
+    """Render a Jupyter notebook as HTML."""
+    import nbformat
+    from nbconvert import HTMLExporter
+
+    repo_data = get_repo_data(request)
+    context = get_base_context(request)
+
+    # Find project
+    project = next((p for p in repo_data.projects if p.id == project_id), None)
+    if not project:
+        context["error"] = f"Project '{project_id}' not found"
+        return templates.TemplateResponse("error.html", context, status_code=404)
+
+    # Find notebook
+    notebook = next((n for n in project.notebooks if n.filename == notebook_name), None)
+    if not notebook:
+        context["error"] = f"Notebook '{notebook_name}' not found in project '{project_id}'"
+        return templates.TemplateResponse("error.html", context, status_code=404)
+
+    # Load and convert notebook
+    notebook_path = settings.repo_dir / notebook.path
+    if not notebook_path.exists():
+        context["error"] = f"Notebook file not found: {notebook.path}"
+        return templates.TemplateResponse("error.html", context, status_code=404)
+
+    try:
+        # Read the notebook
+        with open(notebook_path, "r", encoding="utf-8") as f:
+            nb = nbformat.read(f, as_version=4)
+
+        # Convert to HTML
+        html_exporter = HTMLExporter()
+        html_exporter.template_name = "classic"
+        html_exporter.exclude_input_prompt = False
+        html_exporter.exclude_output_prompt = False
+
+        (body, resources) = html_exporter.from_notebook_node(nb)
+
+        context.update({
+            "project": project,
+            "notebook": notebook,
+            "notebook_html": body,
+        })
+        return templates.TemplateResponse("projects/notebook.html", context)
+
+    except Exception as e:
+        context["error"] = f"Error rendering notebook: {str(e)}"
+        return templates.TemplateResponse("error.html", context, status_code=500)
 
 
 @app.get("/data", response_class=HTMLResponse)

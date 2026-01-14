@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}{{ notebook.title }} - {{ project.title }} - {{ app_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Notebook container styling */
+    .notebook-container {
+        background: var(--surface-raised);
+        border: 1px solid var(--surface-border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-6);
+        margin-top: var(--space-6);
+    }
+
+    /* Override nbconvert styles for dark theme */
+    .notebook-container .jp-Notebook {
+        background: transparent;
+    }
+
+    .notebook-container .jp-Cell {
+        background: var(--surface-overlay);
+        border: 1px solid var(--surface-border);
+        border-radius: var(--radius-md);
+        margin-bottom: var(--space-4);
+        overflow: hidden;
+    }
+
+    .notebook-container .jp-InputArea,
+    .notebook-container .jp-Cell-inputWrapper {
+        background: var(--surface-overlay);
+    }
+
+    .notebook-container .jp-OutputArea {
+        background: var(--surface-base);
+        padding: var(--space-4);
+    }
+
+    .notebook-container .jp-RenderedHTMLCommon {
+        color: var(--text-primary);
+        font-family: var(--font-body);
+    }
+
+    .notebook-container .jp-RenderedHTMLCommon h1,
+    .notebook-container .jp-RenderedHTMLCommon h2,
+    .notebook-container .jp-RenderedHTMLCommon h3,
+    .notebook-container .jp-RenderedHTMLCommon h4 {
+        color: var(--text-primary);
+        font-family: var(--font-display);
+    }
+
+    .notebook-container .jp-RenderedHTMLCommon pre,
+    .notebook-container .jp-RenderedHTMLCommon code {
+        background: var(--surface-overlay);
+        color: var(--accent-primary);
+    }
+
+    .notebook-container .jp-RenderedHTMLCommon a {
+        color: var(--text-link);
+    }
+
+    /* Code cells */
+    .notebook-container .highlight,
+    .notebook-container .input_area,
+    .notebook-container .jp-InputArea-editor {
+        background: var(--surface-overlay) !important;
+        border: none !important;
+    }
+
+    .notebook-container pre {
+        background: var(--surface-overlay);
+        color: var(--text-primary);
+        padding: var(--space-4);
+        border-radius: var(--radius-sm);
+        overflow-x: auto;
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+
+    /* Syntax highlighting overrides for dark theme */
+    .notebook-container .highlight .c,
+    .notebook-container .highlight .c1,
+    .notebook-container .highlight .cm { color: #6e7681; }  /* Comments */
+    .notebook-container .highlight .k,
+    .notebook-container .highlight .kn,
+    .notebook-container .highlight .kp { color: #ff7b72; }  /* Keywords */
+    .notebook-container .highlight .s,
+    .notebook-container .highlight .s1,
+    .notebook-container .highlight .s2 { color: #a5d6ff; }  /* Strings */
+    .notebook-container .highlight .n { color: var(--text-primary); }  /* Names */
+    .notebook-container .highlight .nf,
+    .notebook-container .highlight .nb { color: #d2a8ff; }  /* Functions */
+    .notebook-container .highlight .mi,
+    .notebook-container .highlight .mf { color: #79c0ff; }  /* Numbers */
+    .notebook-container .highlight .o { color: #ff7b72; }  /* Operators */
+    .notebook-container .highlight .p { color: var(--text-primary); }  /* Punctuation */
+
+    /* Output cells */
+    .notebook-container .output_text,
+    .notebook-container .output_stream,
+    .notebook-container .jp-OutputArea-output {
+        color: var(--text-primary);
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+    }
+
+    .notebook-container .output_stderr {
+        color: var(--priority-high);
+    }
+
+    /* DataFrame tables */
+    .notebook-container .dataframe {
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+
+    .notebook-container .dataframe th,
+    .notebook-container .dataframe td {
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--surface-border);
+        text-align: left;
+    }
+
+    .notebook-container .dataframe th {
+        background: var(--surface-overlay);
+        color: var(--text-secondary);
+        font-weight: 600;
+    }
+
+    .notebook-container .dataframe tbody tr:hover {
+        background: var(--surface-raised);
+    }
+
+    /* Images/plots */
+    .notebook-container img {
+        max-width: 100%;
+        height: auto;
+        border-radius: var(--radius-sm);
+    }
+
+    /* Prompts */
+    .notebook-container .jp-InputPrompt,
+    .notebook-container .jp-OutputPrompt,
+    .notebook-container .prompt {
+        color: var(--text-tertiary);
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        min-width: 80px;
+    }
+
+    /* Markdown cells */
+    .notebook-container .jp-RenderedMarkdown,
+    .notebook-container .text_cell_render {
+        padding: var(--space-4);
+        color: var(--text-primary);
+    }
+
+    .notebook-container .jp-RenderedMarkdown p,
+    .notebook-container .text_cell_render p {
+        color: var(--text-secondary);
+        margin-bottom: var(--space-4);
+    }
+
+    .notebook-container .jp-RenderedMarkdown ul,
+    .notebook-container .jp-RenderedMarkdown ol,
+    .notebook-container .text_cell_render ul,
+    .notebook-container .text_cell_render ol {
+        color: var(--text-secondary);
+        margin-bottom: var(--space-4);
+        padding-left: var(--space-6);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav class="mb-8">
+    <a href="/projects" class="text-muted">Projects</a>
+    <span class="text-muted"> / </span>
+    <a href="/projects/{{ project.id }}" class="text-muted">{{ project.title }}</a>
+    <span class="text-muted"> / </span>
+    <span>{{ notebook.filename }}</span>
+</nav>
+
+<div class="page-header">
+    <h1 class="page-title">{{ notebook.title or notebook.filename }}</h1>
+    <p class="page-description">
+        Jupyter notebook from the <a href="/projects/{{ project.id }}">{{ project.title }}</a> project.
+    </p>
+</div>
+
+<div class="flex gap-4 mb-8">
+    <a href="/projects/{{ project.id }}" class="btn btn-secondary">Back to Project</a>
+</div>
+
+<div class="notebook-container">
+    {{ notebook_html | safe }}
+</div>
+{% endblock %}
