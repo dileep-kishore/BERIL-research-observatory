@@ -282,7 +282,7 @@ Discovery content...
 #### 6.2 What is BERDL? (`/about/berdl`)
 
 **Content:**
-- Berkeley Research Data Lake
+- KBase BER Data Lakehouse
 - Delta Lakehouse architecture
 - Available collections
 - Access methods (Spark SQL, REST API, JupyterHub)

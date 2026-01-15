@@ -1,6 +1,6 @@
 ---
 name: berdl
-description: Query the KBase BERDL (Berkeley Research Data Lake) pangenome database. Use when the user asks to explore pangenome data, query species information, get genome statistics, analyze gene clusters, or access functional annotations from the kbase_ke_pangenome database.
+description: Query the KBase BERDL (BER Data Lakehouse) pangenome database. Use when the user asks to explore pangenome data, query species information, get genome statistics, analyze gene clusters, or access functional annotations from the kbase_ke_pangenome database.
 allowed-tools: Bash, Read
 ---
 

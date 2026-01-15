@@ -1,7 +1,7 @@
 # KBase KE Pangenome Database Schema Documentation
 
 **Database**: `kbase_ke_pangenome`
-**Location**: On-prem Delta Lakehouse (BERDL - Berkeley Research Data Lake)
+**Location**: On-prem Delta Lakehouse (BERDL - KBase BER Data Lakehouse)
 **Access**: Spark SQL via REST API at `https://hub.berdl.kbase.us/apis/mcp/`
 **Last Updated**: 2026-01-07
 **Verified**: Direct Spark SQL queries on cluster (2026-01-07)
