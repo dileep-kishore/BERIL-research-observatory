@@ -34,7 +34,6 @@ The KBase BERDL Data Lakehouse contains multiple collections. BERIL will showcas
 |---------------|------|-------------|
 | `phagefoundry_*` | PhageFoundry Browsers | Phage genome browsers for specific hosts (Klebsiella, P. aeruginosa, Acinetobacter, P. viridiflava) |
 | `enigma_coral` | ENIGMA Coral | ENIGMA project coral microbiome data |
-| `planetmicrobe_planetmicrobe` | Planet Microbe | Ocean microbiome sampling and taxonomy |
 
 ### Reference Collections
 
@@ -524,12 +523,18 @@ In project README.md, add a `## Collections` section:
 
 ---
 
+## Design Decisions
+
+1. **Schema source**: Cached in configuration files (not live from API). Schemas don't change often, and caching allows us to add descriptions and curate what's shown.
+
+2. **Collection philosophy**: Placeholder text initially, refined over time. Each collection gets a "why this exists" section explaining what questions it answers.
+
+3. **Sample queries**: Pre-written and curated. Start with the most useful patterns based on data content, expand based on user needs.
+
 ## Questions to Resolve
 
-1. **Schema for non-pangenome collections**: Need to document schemas for fitness browser, biochemistry, etc.
-2. **Collection philosophy**: Need input on the "why" for each collection
-3. **Initial contributors**: Who should be listed as initial contributors?
-4. **Cross-collection examples**: What are good examples of cross-collection analysis to highlight?
+1. **Initial contributors**: Who should be listed as initial contributors?
+2. **Cross-collection examples**: What are good examples of cross-collection analysis to highlight?
 
 ---
 
