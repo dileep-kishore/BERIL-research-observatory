@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}{{ collection_id }} - Collections - {{ app_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .collection-header {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-6);
+        margin-bottom: var(--space-8);
+    }
+
+    .collection-icon {
+        font-size: 3rem;
+        line-height: 1;
+    }
+
+    .collection-info {
+        flex: 1;
+    }
+
+    .collection-id {
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    .schema-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: var(--space-6);
+        margin-top: var(--space-6);
+    }
+
+    @media (max-width: 900px) {
+        .schema-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .table-list {
+        background: var(--surface-raised);
+        border: 1px solid var(--surface-border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-4);
+        position: sticky;
+        top: var(--space-4);
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+    }
+
+    .table-list h3 {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: var(--space-4);
+    }
+
+    .table-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-sm);
+        color: var(--text-primary);
+        text-decoration: none;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        transition: background 150ms ease;
+    }
+
+    .table-list-item:hover {
+        background: var(--surface-overlay);
+    }
+
+    .table-list-item.active {
+        background: var(--accent-primary-muted);
+        color: var(--accent-primary);
+    }
+
+    .table-row-count {
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
+    }
+
+    .schema-content {
+        background: var(--surface-raised);
+        border: 1px solid var(--surface-border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-6);
+    }
+
+    .column-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+
+    .column-table th,
+    .column-table td {
+        padding: var(--space-3) var(--space-4);
+        text-align: left;
+        border-bottom: 1px solid var(--surface-border);
+    }
+
+    .column-table th {
+        color: var(--text-secondary);
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .column-table td code {
+        background: var(--surface-overlay);
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        font-size: 0.8125rem;
+    }
+
+    .column-type {
+        color: var(--accent-primary);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+    }
+
+    .sample-query {
+        background: var(--surface-overlay);
+        border-radius: var(--radius-md);
+        padding: var(--space-4);
+        margin-top: var(--space-6);
+    }
+
+    .sample-query h4 {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: var(--space-3);
+    }
+
+    .sample-query pre {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        overflow-x: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav class="mb-8">
+    <a href="/collections" class="text-muted">Collections</a>
+    <span class="text-muted"> / </span>
+    <span>{{ collection_id }}</span>
+</nav>
+
+{% if collection_id == "kbase_ke_pangenome" %}
+<!-- Pangenome Collection -->
+<div class="collection-header">
+    <span class="collection-icon">&#129516;</span>
+    <div class="collection-info">
+        <h1 class="page-title" style="margin-bottom: var(--space-2);">Pangenome Collection</h1>
+        <p class="collection-id">{{ collection_id }}</p>
+    </div>
+    <span class="badge" style="background: rgba(57, 212, 230, 0.15); color: #39d4e6;">Primary</span>
+</div>
+
+<section class="section">
+    <div class="card" style="border-left: 4px solid var(--accent-primary);">
+        <h3 style="margin-bottom: var(--space-4);">Philosophy</h3>
+        <p>
+            The Pangenome Collection enables <strong>comparative genomics at scale</strong>. Built on GTDB r214,
+            it provides species-level pangenome analysis for 293,059 genomes across 27,690 microbial species.
+        </p>
+        <p style="margin-top: var(--space-4);">
+            <strong>Key questions this collection answers:</strong>
+        </p>
+        <ul style="margin-top: var(--space-2);">
+            <li>What genes are core vs accessory in a given species?</li>
+            <li>How do functional annotations distribute across pangenome partitions?</li>
+            <li>What is the ANI structure within and between species?</li>
+            <li>How does genome composition relate to environmental context?</li>
+        </ul>
+    </div>
+</section>
+
+<section class="section">
+    <h2>Scale</h2>
+    <div class="grid grid-4">
+        <div class="card" style="text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent-primary);">293,059</div>
+            <div class="text-muted text-small">genomes</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent-primary);">27,690</div>
+            <div class="text-muted text-small">species</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent-primary);">1B+</div>
+            <div class="text-muted text-small">genes</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent-primary);">14</div>
+            <div class="text-muted text-small">tables</div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <h2>Schema Browser</h2>
+
+    <div class="schema-layout">
+        <div class="table-list">
+            <h3>Tables ({{ tables|length }})</h3>
+            {% for table in tables %}
+            <a href="?table={{ table.name }}" class="table-list-item {% if request.query_params.get('table') == table.name %}active{% endif %}">
+                <span>{{ table.name }}</span>
+                {% if table.row_count %}
+                <span class="table-row-count">{{ "{:,}".format(table.row_count) }}</span>
+                {% endif %}
+            </a>
+            {% else %}
+            <p class="text-muted text-small">No tables documented yet.</p>
+            {% endfor %}
+        </div>
+
+        <div class="schema-content">
+            {% if request.query_params.get('table') %}
+                {% set selected_table = tables | selectattr('name', 'equalto', request.query_params.get('table')) | first %}
+                {% if selected_table %}
+                <h3 style="margin-bottom: var(--space-4);">
+                    <code>{{ selected_table.name }}</code>
+                    {% if selected_table.row_count %}
+                    <span class="text-muted text-small" style="font-weight: 400; margin-left: var(--space-2);">
+                        {{ "{:,}".format(selected_table.row_count) }} rows
+                    </span>
+                    {% endif %}
+                </h3>
+
+                {% if selected_table.description %}
+                <p class="text-secondary mb-6">{{ selected_table.description }}</p>
+                {% endif %}
+
+                <table class="column-table">
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for col in selected_table.columns %}
+                        <tr>
+                            <td><code>{{ col.name }}</code></td>
+                            <td class="column-type">{{ col.type }}</td>
+                            <td class="text-secondary">{{ col.description or '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted">Table not found.</p>
+                {% endif %}
+            {% else %}
+            <div style="text-align: center; padding: var(--space-12);">
+                <p class="text-muted">Select a table from the left to view its schema.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <h2>Sample Queries</h2>
+
+    <div class="sample-query">
+        <h4>Get species with most genomes</h4>
+        <pre><code>SELECT
+  s.GTDB_species,
+  p.no_genomes,
+  p.no_core,
+  p.no_aux_genome,
+  s.mean_intra_species_ANI
+FROM kbase_ke_pangenome.pangenome p
+JOIN kbase_ke_pangenome.gtdb_species_clade s
+  ON p.gtdb_species_clade_id = s.gtdb_species_clade_id
+ORDER BY p.no_genomes DESC
+LIMIT 20</code></pre>
+    </div>
+
+    <div class="sample-query">
+        <h4>Get functional annotations for a species</h4>
+        <pre><code>SELECT
+  e.COG_category,
+  e.Description,
+  COUNT(*) as gene_count
+FROM kbase_ke_pangenome.gene g
+JOIN kbase_ke_pangenome.eggnog_mapper_annotations e
+  ON g.gene_id = e.gene_id
+WHERE g.gtdb_species_clade_id = 's__Escherichia_coli--RS_GCF_000005845.2'
+GROUP BY e.COG_category, e.Description
+ORDER BY gene_count DESC
+LIMIT 20</code></pre>
+    </div>
+</section>
+
+<section class="section">
+    <h2>Related Collections</h2>
+    <div class="grid grid-3">
+        <a href="/collections/kescience_fitnessbrowser" class="card">
+            <h4>Fitness Browser</h4>
+            <p class="text-muted text-small">Link pangenome data with gene fitness experiments</p>
+        </a>
+        <a href="/collections/kbase_msd_biochemistry" class="card">
+            <h4>ModelSEED Biochemistry</h4>
+            <p class="text-muted text-small">Map gene functions to metabolic reactions</p>
+        </a>
+        <a href="/collections/kbase_genomes" class="card">
+            <h4>KBase Genomes</h4>
+            <p class="text-muted text-small">Access original genome sequences and features</p>
+        </a>
+    </div>
+</section>
+
+{% else %}
+<!-- Generic Collection Page (placeholder for other collections) -->
+<div class="collection-header">
+    <span class="collection-icon">&#128194;</span>
+    <div class="collection-info">
+        <h1 class="page-title" style="margin-bottom: var(--space-2);">{{ collection_id }}</h1>
+        <p class="collection-id">{{ collection_id }}</p>
+    </div>
+</div>
+
+<section class="section">
+    <div class="card" style="border-left: 4px solid var(--accent-secondary);">
+        <h3 style="margin-bottom: var(--space-4);">Coming Soon</h3>
+        <p>
+            Detailed documentation for the <code>{{ collection_id }}</code> collection is being developed.
+            In the meantime, you can explore this collection directly via the BERDL JupyterHub.
+        </p>
+        <p style="margin-top: var(--space-4);">
+            <a href="https://hub.berdl.kbase.us" class="btn btn-secondary" target="_blank">Access JupyterHub</a>
+        </p>
+    </div>
+</section>
+
+{% endif %}
+{% endblock %}

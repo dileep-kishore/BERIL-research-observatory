@@ -1,4 +1,4 @@
-"""Pangenome Research Observatory - FastAPI Application."""
+"""BERIL Research Observatory - FastAPI Application."""
 
 from pathlib import Path
 
@@ -155,27 +155,38 @@ async def notebook_viewer(request: Request, project_id: str, notebook_name: str)
         return templates.TemplateResponse("error.html", context, status_code=500)
 
 
-@app.get("/data", response_class=HTMLResponse)
-async def data_overview(request: Request):
-    """Data catalog overview page."""
+@app.get("/collections", response_class=HTMLResponse)
+async def collections_overview(request: Request):
+    """Collections overview page - browse all BERDL collections."""
     repo_data = get_repo_data(request)
     context = get_base_context(request)
     context["tables"] = repo_data.tables
-    return templates.TemplateResponse("data/overview.html", context)
+    return templates.TemplateResponse("collections/overview.html", context)
+
+
+@app.get("/collections/{collection_id}", response_class=HTMLResponse)
+async def collection_detail(request: Request, collection_id: str):
+    """Collection detail page with schema browser."""
+    repo_data = get_repo_data(request)
+    context = get_base_context(request)
+    context["collection_id"] = collection_id
+    context["tables"] = repo_data.tables
+    return templates.TemplateResponse("collections/detail.html", context)
+
+
+# Legacy redirect for /data routes
+@app.get("/data", response_class=HTMLResponse)
+async def data_redirect(request: Request):
+    """Redirect legacy /data to /collections."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/collections", status_code=301)
 
 
 @app.get("/data/schema", response_class=HTMLResponse)
-async def schema_browser(request: Request, table: str | None = None):
-    """Schema browser page."""
-    repo_data = get_repo_data(request)
-    context = get_base_context(request)
-    context["tables"] = repo_data.tables
-
-    if table:
-        selected = next((t for t in repo_data.tables if t.name == table), None)
-        context["selected_table"] = selected
-
-    return templates.TemplateResponse("data/schema.html", context)
+async def schema_redirect(request: Request):
+    """Redirect legacy /data/schema to /collections/kbase_ke_pangenome."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/collections/kbase_ke_pangenome", status_code=301)
 
 
 @app.get("/knowledge/discoveries", response_class=HTMLResponse)

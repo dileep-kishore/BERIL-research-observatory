@@ -46,8 +46,8 @@ class Settings(BaseSettings):
         return self.cache_dir / "indexdir"
 
     # App settings
-    app_name: str = "Pangenome Research Observatory"
-    app_description: str = "Exploring microbial diversity at scale"
+    app_name: str = "BERIL Research Observatory"
+    app_description: str = "AI-powered exploration of the KBase Data Lakehouse"
     debug: bool = False
 
     # Database stats (for hero display)

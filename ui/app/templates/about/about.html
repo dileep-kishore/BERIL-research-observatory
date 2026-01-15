@@ -4,46 +4,105 @@
 
 {% block content %}
 <div class="page-header">
-    <h1 class="page-title">About the Project</h1>
+    <h1 class="page-title">About BERIL</h1>
     <p class="page-description">
-        The Pangenome Research Observatory is a collaborative platform for exploring
-        microbial genomics using the KBase BERDL data lakehouse.
+        AI-powered exploration of the KBase Data Lakehouse.
     </p>
 </div>
 
 <section class="section">
-    <h2>Purpose</h2>
+    <h2>What is BERIL?</h2>
+    <div class="card" style="border-left: 4px solid var(--accent-primary);">
+        <p>
+            <strong>BERIL</strong> is an AI integration layer for the <strong>KBase BER Data Lakehouse (BERDL)</strong>.
+            It provides resources, skills, and plugins that enable AI agents and human researchers to analyze
+            BERDL data collaboratively.
+        </p>
+        <p style="margin-top: var(--space-4);">
+            Through the BERIL Research Observatory, users can:
+        </p>
+        <ul style="margin-top: var(--space-2);">
+            <li><strong>Explore multiple data collections</strong> across the BERDL lakehouse</li>
+            <li><strong>Analyze their own data</strong> in the context of BERDL reference collections</li>
+            <li><strong>Share discoveries</strong>, lessons learned, and pitfalls with proper attribution</li>
+            <li><strong>Use AI assistants</strong> with BERIL skills to accelerate analysis</li>
+        </ul>
+    </div>
+</section>
+
+<section class="section">
+    <h2>What is BERDL?</h2>
     <div class="card">
         <p>
-            This project has dual goals:
+            The <strong>Berkeley Research Data Lake (BERDL)</strong> is a Delta Lakehouse containing
+            curated scientific datasets for computational biology research. It provides:
         </p>
-        <ol>
-            <li><strong>Science:</strong> Answer research questions in microbial genomics and ecology</li>
-            <li><strong>Knowledge:</strong> Capture learnings to reduce re-discovery overhead for future researchers</li>
-        </ol>
-        <p>
-            We use the <code>kbase_ke_pangenome</code> database containing {{ total_genomes }} genomes
-            across {{ total_species }} species to pursue scientific questions while building shared
-            documentation that accelerates future work.
+        <ul style="margin-top: var(--space-4);">
+            <li><strong>Multiple data collections</strong> including pangenomes, fitness data, biochemistry, and more</li>
+            <li><strong>Spark SQL access</strong> for large-scale queries</li>
+            <li><strong>JupyterHub integration</strong> for interactive analysis</li>
+            <li><strong>REST API</strong> for programmatic access</li>
+        </ul>
+        <p style="margin-top: var(--space-4);">
+            <a href="https://hub.berdl.kbase.us" class="btn btn-secondary" target="_blank">Access BERDL JupyterHub</a>
         </p>
     </div>
 </section>
 
 <section class="section">
-    <h2>The Data</h2>
+    <h2>Featured Collections</h2>
+    <div class="grid grid-2">
+        <div class="card">
+            <h4>Pangenome Collection</h4>
+            <p class="text-muted text-small" style="font-family: var(--font-mono);">kbase_ke_pangenome</p>
+            <p style="margin-top: var(--space-2);">
+                Pangenome data for 293,059 genomes across 27,690 microbial species derived from GTDB r214.
+                Includes core/accessory gene classification, functional annotations (eggNOG), and ANI relationships.
+            </p>
+        </div>
+        <div class="card">
+            <h4>Fitness Browser</h4>
+            <p class="text-muted text-small" style="font-family: var(--font-mono);">kescience_fitnessbrowser</p>
+            <p style="margin-top: var(--space-2);">
+                Gene fitness data from transposon mutant experiments across 40+ bacterial organisms.
+                Identify essential genes and condition-specific phenotypes.
+            </p>
+        </div>
+        <div class="card">
+            <h4>ModelSEED Biochemistry</h4>
+            <p class="text-muted text-small" style="font-family: var(--font-mono);">kbase_msd_biochemistry</p>
+            <p style="margin-top: var(--space-2);">
+                Biochemistry reference data for metabolic modeling. Reactions, compounds, and pathway mappings.
+            </p>
+        </div>
+        <div class="card">
+            <h4>KBase Genomes</h4>
+            <p class="text-muted text-small" style="font-family: var(--font-mono);">kbase_genomes</p>
+            <p style="margin-top: var(--space-2);">
+                Structural genomics data including contigs, features, and protein sequences.
+            </p>
+        </div>
+    </div>
+    <p style="margin-top: var(--space-4);">
+        <a href="/collections" class="btn btn-primary">Explore All Collections</a>
+    </p>
+</section>
+
+<section class="section">
+    <h2>AI Integration</h2>
     <div class="card">
         <p>
-            The database is built on GTDB r214 and includes:
+            BERIL provides skills and plugins for AI assistants that enable:
         </p>
-        <ul>
-            <li>Species-level pangenomes computed with motupan (90% AAI clustering)</li>
-            <li>Pairwise ANI between genomes (~421M pairs)</li>
-            <li>Functional annotations via eggNOG v6 (COG, GO, KEGG, EC, PFAM)</li>
-            <li>Metabolic pathway predictions via GapMind</li>
-            <li>Environmental embeddings from AlphaEarth (28.4% coverage)</li>
+        <ul style="margin-top: var(--space-4);">
+            <li><strong>Schema exploration</strong> - Understand available tables and columns</li>
+            <li><strong>Query generation</strong> - Generate SQL queries for common analysis patterns</li>
+            <li><strong>Data interpretation</strong> - Help interpret results in biological context</li>
+            <li><strong>Cross-collection analysis</strong> - Combine data from multiple collections</li>
         </ul>
-        <p>
-            <a href="/data" class="btn btn-secondary mt-4">Explore Data Catalog</a>
+        <p style="margin-top: var(--space-4);">
+            AI assistants with BERIL skills can help researchers explore the data lakehouse more efficiently,
+            reducing the overhead of learning new schemas and query patterns.
         </p>
     </div>
 </section>
@@ -55,7 +114,7 @@
             <h4>For Researchers</h4>
             <ol>
                 <li>Browse existing <a href="/projects">projects</a> for inspiration</li>
-                <li>Check the <a href="/data/schema">schema browser</a> for available data</li>
+                <li>Explore <a href="/collections">collections</a> to understand available data</li>
                 <li>Read <a href="/knowledge/pitfalls">query pitfalls</a> before writing SQL</li>
                 <li>Access JupyterHub at <a href="https://hub.berdl.kbase.us" target="_blank">hub.berdl.kbase.us</a></li>
             </ol>
@@ -79,9 +138,9 @@
             <h4>BERDL JupyterHub</h4>
             <p class="text-muted text-small">Run Spark queries directly on the cluster</p>
         </a>
-        <a href="/data/schema" class="card">
-            <h4>Schema Browser</h4>
-            <p class="text-muted text-small">Explore tables and columns</p>
+        <a href="/collections" class="card">
+            <h4>Collections</h4>
+            <p class="text-muted text-small">Explore data collections and schemas</p>
         </a>
         <a href="/knowledge/pitfalls" class="card">
             <h4>Query Pitfalls</h4>
