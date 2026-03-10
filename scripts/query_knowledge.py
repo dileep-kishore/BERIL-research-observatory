@@ -19,6 +19,7 @@ Usage examples:
     uv run scripts/query_knowledge.py hypotheses testing
     uv run scripts/query_knowledge.py gaps
     uv run scripts/query_knowledge.py timeline field_vs_lab_fitness
+    uv run scripts/query_knowledge.py backfill essential_genome
 """
 
 from __future__ import annotations
@@ -481,7 +482,7 @@ def _render_timeline(project_filter: str | None) -> str:
     return "\n".join(lines)
 
 
-def _render_backfill() -> str:
+def _render_backfill(project_id: str | None = None) -> str:
     """List projects missing Layer 3 graph coverage."""
     registry, _, _ = _require_registry_artifacts()
     projects = registry.get("projects", [])
@@ -508,7 +509,7 @@ def _render_backfill() -> str:
         if ep:
             relation_projects.add(ep)
 
-    missing = []
+    coverage_rows = []
     for p in projects:
         if not isinstance(p, dict):
             continue
@@ -516,8 +517,35 @@ def _render_backfill() -> str:
         status = str(p.get("status", "unknown"))
         has_timeline = pid in timeline_projects
         has_relations = pid in relation_projects
-        if not has_timeline and not has_relations:
-            missing.append((pid, status))
+        coverage_rows.append((pid, status, has_timeline, has_relations))
+
+    if project_id:
+        target = next((row for row in coverage_rows if row[0] == project_id), None)
+        if target is None:
+            return f"Project `{project_id}` not found in the registry."
+
+        pid, status, has_timeline, has_relations = target
+        lines = [f"### Layer 3 Coverage for {pid}", "", f"- Status: `{status}`"]
+        if has_timeline or has_relations:
+            coverage_bits = []
+            if has_timeline:
+                coverage_bits.append("timeline events")
+            if has_relations:
+                coverage_bits.append("relation edges")
+            lines.append(
+                f"- `{pid}` already has Layer 3 coverage via {', '.join(coverage_bits)}."
+            )
+        else:
+            lines.append(
+                f"- `{pid}` is missing Layer 3 coverage because it has no timeline events and no relation edges."
+            )
+        return "\n".join(lines)
+
+    missing = [
+        (pid, status)
+        for pid, status, has_timeline, has_relations in coverage_rows
+        if not has_timeline and not has_relations
+    ]
     missing.sort(key=lambda x: (x[1], x[0]))
 
     lines = ["### Projects Missing Layer 3 Graph Coverage", ""]
@@ -567,7 +595,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_timeline = sub.add_parser("timeline", help="Show timeline events")
     p_timeline.add_argument("project", nargs="?")
-    sub.add_parser("backfill", help="List projects missing Layer 3 graph coverage")
+    p_backfill = sub.add_parser("backfill", help="List projects missing Layer 3 graph coverage")
+    p_backfill.add_argument("project_id", nargs="?")
     return parser
 
 
@@ -615,7 +644,7 @@ def main() -> int:
         print(_render_timeline(args.project))
         return 0
     if args.command == "backfill":
-        print(_render_backfill())
+        print(_render_backfill(args.project_id))
         return 0
 
     parser.print_help()

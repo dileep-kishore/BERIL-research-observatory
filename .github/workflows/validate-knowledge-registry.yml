@@ -36,3 +36,6 @@ jobs:
 
       - name: Validate provenance schema and cross-file integrity
         run: uv run scripts/validate_provenance.py
+
+      - name: Validate knowledge graph integrity
+        run: uv run scripts/validate_knowledge_graph.py
