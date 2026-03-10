@@ -1,6 +1,7 @@
 """Unit tests for app.config.Settings."""
 
 from pathlib import Path
+import warnings
 
 import pytest
 
@@ -324,6 +325,19 @@ class TestTypeCoercion:
         s = Settings()
         assert s.total_genomes == 42
         assert isinstance(s.total_genomes, int)
+
+
+class TestWarnings:
+    def test_settings_emits_no_pydantic_config_deprecation(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            Settings()
+
+        assert not [
+            warning
+            for warning in caught
+            if "Support for class-based `config` is deprecated" in str(warning.message)
+        ]
 
 
 # ---------------------------------------------------------------------------
