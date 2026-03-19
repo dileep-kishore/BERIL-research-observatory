@@ -1,6 +1,6 @@
 version: 1
-generated_at: '2026-03-10T02:26:30'
-project_count: 41
+generated_at: '2026-03-19T16:43:57'
+project_count: 46
 projects:
 - id: acinetobacter_adp1_explorer
   title: Acinetobacter baylyi ADP1 Data Explorer
@@ -243,6 +243,216 @@ projects:
   - adp1_deletion_phenotypes
   has_provenance: true
   date_completed: 2026-02
+- id: amr_pangenome_atlas
+  title: Pan-Bacterial AMR Gene Landscape
+  status: complete
+  research_question: What is the distribution, conservation, phylogenetic structure, functional context, and environmental
+    association of antimicrobial resistance (AMR) genes across 27,000 bacterial species pangenomes?
+  key_findings:
+  - AMR Genes Are Massively Depleted from the Core Genome
+  - Intrinsic vs Acquired Resistance Creates a Conservation Dichotomy
+  - AMR Hotspots Are Concentrated in Clinical Pathogens
+  - AMR Genes Are Enriched in Defense and Ion Transport Functions
+  - Clinical Species Carry 2.7x More AMR — and It's More Acquired
+  - AMR Genes Are Not a Fitness Burden in Lab Conditions
+  tags:
+  - HGT
+  - biogeography
+  - co-occurrence
+  - conservation
+  - correlation
+  - dark-genes
+  - defense
+  - ecotype
+  - enrichment
+  - fitness
+  - gene-annotation
+  - metabolism
+  - metal-stress
+  - mobile-elements
+  - modules
+  - pangenome
+  organisms:
+  - 000 bacteria
+  - 48 organisms
+  - 37 Fitness Browser organisms
+  - 27,690 species
+  - 4,252 species
+  databases_used:
+  - kbase_ke_pangenome
+  - kescience_fitnessbrowser
+  notebook_count: 7
+  figure_count: 16
+  key_data_artifacts: []
+  references:
+  - id: feldgarden2021
+    title: AMRFinderPlus and the Reference Gene Catalog facilitate examination of the genomic links among antimicrobial resistance,
+      stress response, and virulence
+    doi: null
+    pmid: '34135355'
+    type: primary_data_source
+  - id: larsson2022
+    title: Antibiotic resistance in the environment
+    doi: null
+    pmid: '34737424'
+    type: supporting
+  - id: hua2020
+    title: Comparison of Antimicrobial Resistance Detected in Environmental and Clinical Isolates from Historical Data for
+      the US
+    doi: null
+    pmid: '32351993'
+    type: supporting
+  - id: schwengers2021
+    title: 'Bakta: rapid and standardized annotation of bacterial genomes via alignment-free sequence identification'
+    doi: null
+    pmid: '34739369'
+    type: methodology
+  - id: parks2022
+    title: 'GTDB: an ongoing census of bacterial and archaeal diversity through a phylogenetically consistent, rank normalized
+      and complete genome-based taxonomy'
+    doi: null
+    pmid: '34520557'
+    type: methodology
+  - id: price2018
+    title: Mutant phenotypes for thousands of bacterial genes of unknown function
+    doi: null
+    pmid: '29769716'
+    type: methodology
+  - id: arkin2018
+    title: 'KBase: The United States Department of Energy Systems Biology Knowledgebase'
+    doi: null
+    pmid: '29979655'
+    type: methodology
+  depends_on:
+  - conservation_vs_fitness
+  enables:
+  - amr_strain_variation
+  has_provenance: true
+  date_completed: 2026-03
+- id: amr_strain_variation
+  title: Within-Species AMR Strain Variation
+  status: complete
+  research_question: Within a species, how does the AMR repertoire vary between strains, and what drives that variation?
+  key_findings:
+  - The majority of AMR genes are variable or rare within species
+  - Resistance islands are widespread and tightly co-inherited
+  - AMR variation tracks phylogeny in the majority of species — but acquired genes show stronger signal than intrinsic
+  - One in five species has distinct AMR ecotypes
+  - No significant temporal trends in AMR accumulation after multiple-testing correction
+  - Host-associated species carry more AMR genes than environmental species
+  tags:
+  - HGT
+  - co-occurrence
+  - conservation
+  - correlation
+  - defense
+  - ecotype
+  - gene-annotation
+  - metabolism
+  - mobile-elements
+  - modules
+  - pangenome
+  - pathway-analysis
+  organisms:
+  - 305 bacteria
+  - 1,305 species
+  - 705 species
+  - 1,261 species
+  - 701 species
+  databases_used:
+  - kbase_ke_pangenome
+  notebook_count: 7
+  figure_count: 17
+  key_data_artifacts: []
+  references:
+  - id: arkin2018
+    title: 'KBase: The United States Department of Energy Systems Biology Knowledgebase'
+    doi: null
+    pmid: '29979655'
+    type: primary_data_source
+  - id: parks2022
+    title: 'GTDB: an ongoing census of bacterial and archaeal diversity through a phylogenetically consistent, rank normalized
+      and complete genome-based taxonomy'
+    doi: null
+    pmid: '34520557'
+    type: primary_data_source
+  - id: sanchez-buso2020
+    title: A Pangenomic Perspective on the Emergence, Maintenance, and Predictability of Antibiotic Resistance
+    doi: null
+    pmid: '32633921'
+    type: supporting
+  - id: mcinerney2017
+    title: Why prokaryotes have pangenomes
+    doi: null
+    pmid: '28350002'
+    type: methodology
+  - id: domingo-sananes2021
+    title: Mechanisms That Shape Microbial Pangenomes
+    doi: null
+    pmid: '33279381'
+    type: supporting
+  - id: colquhoun2024
+    title: Bacterial lifestyle shapes pangenomes
+    doi: 10.1073/pnas.2320170121
+    pmid: null
+    type: supporting
+  - id: partridge2018
+    title: Mobile Genetic Elements Associated with Antimicrobial Resistance
+    doi: null
+    pmid: '30068738'
+    type: methodology
+  - id: dobrindt2004
+    title: Genomic islands in pathogenic and environmental microorganisms
+    doi: null
+    pmid: '15100694'
+    type: methodology
+  - id: maier2025
+    title: Genetic compatibility and ecological connectivity drive the dissemination of antibiotic resistance genes
+    doi: 10.1038/s41467-025-49301-1
+    pmid: null
+    type: supporting
+  - id: souza2020
+    title: First Steps in the Analysis of Prokaryotic Pan-Genomes
+    doi: null
+    pmid: '32742128'
+    type: methodology
+  - id: wiedenbeck2011
+    title: Origins of bacterial diversity through horizontal genetic transfer and adaptation to new ecological niches
+    doi: null
+    pmid: '21711367'
+    type: methodology
+  - id: holt2015
+    title: Genomic analysis of diversity, population structure, virulence, and antimicrobial resistance in Klebsiella pneumoniae,
+      an urgent threat to public health
+    doi: null
+    pmid: '26100894'
+    type: supporting
+  - id: wyres2018
+    title: Klebsiella pneumoniae as a key trafficker of drug resistance genes from environmental to clinically important bacteria
+    doi: null
+    pmid: '29723841'
+    type: supporting
+  - id: croucher2014
+    title: Population genomics of post-vaccine changes in pneumococcal epidemiology
+    doi: null
+    pmid: '23644493'
+    type: supporting
+  - id: bourély2024
+    title: 'PanKA: Leveraging population pangenome to predict antibiotic resistance'
+    doi: null
+    pmid: '39262793'
+    type: supporting
+  - id: nguyen2018
+    title: A pan-genome-based machine learning approach for predicting antimicrobial resistance activities of the Escherichia
+      coli strains
+    doi: null
+    pmid: '29950006'
+    type: methodology
+  depends_on:
+  - amr_pangenome_atlas
+  enables: []
+  has_provenance: true
+  date_completed: 2026-03
 - id: aromatic_catabolism_network
   title: Aromatic Catabolism Support Network in ADP1
   status: complete
@@ -381,9 +591,123 @@ projects:
   - metal_fitness_atlas
   - metal_specificity
   - lab_field_ecology
-  enables: []
+  enables:
+  - bacdive_phenotype_metal_tolerance
   has_provenance: true
   date_completed: 2026-02
+- id: bacdive_phenotype_metal_tolerance
+  title: BacDive Phenotype Signatures of Metal Tolerance
+  status: complete
+  research_question: Can BacDive-measured bacterial phenotypes (Gram stain, oxygen tolerance, metabolite utilization, enzyme
+    activities) predict metal tolerance as measured by Fitness Browser experiments and the Metal Fitness Atlas?
+  key_findings:
+  - Gram-Negative Bacteria Have Significantly Higher Metal Tolerance Scores (d=-0.61)
+  - Seven of Ten Phenotype Features Are Individually Significant After FDR Correction
+  - Phenotype Features Add Nothing Beyond Taxonomy (Delta R² = -0.009)
+  - Urease-Positive Organisms Have Lower Metal Tolerance (H1e Reversed)
+  - Anaerobe vs Aerobe Difference Is Negligible (H1b Not Supported)
+  - SHAP Analysis Confirms Taxonomy and Gene Count Dominate
+  - Direct FB-BacDive Validation (n = 12)
+  tags:
+  - conservation
+  - correlation
+  - dark-genes
+  - ecotype
+  - fitness
+  - metabolism
+  - metal-stress
+  - modules
+  - pangenome
+  organisms:
+  - 27,702 pangenome species
+  - 5,000 species
+  - 27,702 species
+  - 3,272 species
+  - 3,751 species
+  databases_used:
+  - kbase_ke_pangenome
+  - kescience_bacdive
+  - kescience_fitnessbrowser
+  notebook_count: 5
+  figure_count: 6
+  key_data_artifacts: []
+  references:
+  - id: arkin2018
+    title: 'KBase: The United States Department of Energy Systems Biology Knowledgebase'
+    doi: null
+    pmid: '29979655'
+    type: methodology
+  - id: biswas2021
+    title: Overview on the role of heavy metals tolerance on developing antibiotic resistance in both Gram-negative and Gram-positive
+      bacteria
+    doi: 10.1007/s00203-021-02275-w
+    pmid: null
+    type: supporting
+  - id: goberna2016
+    title: Predicting microbial traits with phylogenies
+    doi: 10.1038/ismej.2015.171
+    pmid: null
+    type: supporting
+  - id: koblitz2025
+    title: Predicting bacterial phenotypic traits through improved machine learning using high-quality, curated datasets
+    doi: 10.1038/s42003-025-08313-3
+    pmid: null
+    type: methodology
+  - id: maier2019
+    title: Role of Nickel in Microbial Pathogenesis
+    doi: 10.3390/inorganics7070080
+    pmid: null
+    type: supporting
+  - id: martin-moldes2015
+    title: Whole-genome analysis of Azoarcus sp. strain CIB provides genetic insights to its different lifestyles
+    doi: null
+    pmid: null
+    type: supporting
+  - id: olenski2025
+    title: Molecular mechanisms of bacterial survival strategies under heavy metal stress
+    doi: 10.3390/ijms26125716
+    pmid: null
+    type: supporting
+  - id: paulsen1997
+    title: 'The SMR family: a novel family of multidrug efflux proteins'
+    doi: null
+    pmid: null
+    type: supporting
+  - id: price2018
+    title: Mutant phenotypes for thousands of bacterial genes of unknown function
+    doi: null
+    pmid: '29769716'
+    type: methodology
+  - id: reimer2022
+    title: 'BacDive in 2022: the knowledge base for standardized bacterial and archaeal data'
+    doi: 10.1093/nar/gkab961
+    pmid: null
+    type: primary_data_source
+  - id: schwan2023
+    title: Genotypic and phenotypic characterization of antimicrobial resistance and metal tolerance in Salmonella and E.
+      coli
+    doi: null
+    pmid: '37290750'
+    type: supporting
+  - id: stahler2006
+    title: The CznABC metal efflux pump is required for cadmium, zinc, and nickel resistance, urease modulation, and gastric
+      colonization
+    doi: null
+    pmid: null
+    type: supporting
+  - id: van-assche2017
+    title: Phylogenetic signal in carbon source assimilation profiles and tolerance to chemical agents
+    doi: 10.1007/s00253-016-7866-0
+    pmid: null
+    type: supporting
+  depends_on:
+  - metal_fitness_atlas
+  - conservation_vs_fitness
+  - counter_ion_effects
+  - bacdive_metal_validation
+  enables: []
+  has_provenance: true
+  date_completed: 2026-03
 - id: cofitness_coinheritance
   title: Co-fitness Predicts Co-inheritance in Bacterial Pangenomes
   status: complete
@@ -684,6 +1008,8 @@ projects:
     type: methodology
   depends_on: []
   enables:
+  - amr_pangenome_atlas
+  - bacdive_phenotype_metal_tolerance
   - cofitness_coinheritance
   - conservation_fitness_synthesis
   - core_gene_tradeoffs
@@ -699,6 +1025,7 @@ projects:
   - metal_specificity
   - module_conservation
   - pathway_capability_dependency
+  - truly_dark_genes
   has_provenance: true
   date_completed: 2026-02
 - id: core_gene_tradeoffs
@@ -930,6 +1257,7 @@ projects:
   - conservation_vs_fitness
   - essential_genome
   enables:
+  - bacdive_phenotype_metal_tolerance
   - metal_specificity
   has_provenance: true
   date_completed: 2026-02
@@ -1367,6 +1695,7 @@ projects:
   - functional_dark_matter
   - metal_fitness_atlas
   - metal_specificity
+  - truly_dark_genes
   has_provenance: true
   date_completed: 2026-02
 - id: essential_metabolome
@@ -1693,6 +2022,7 @@ projects:
   - metal_fitness_atlas
   - metal_specificity
   - module_conservation
+  - truly_dark_genes
   has_provenance: true
   date_completed: 2026-02
 - id: functional_dark_matter
@@ -1739,8 +2069,8 @@ projects:
   - kbase_ke_pangenome
   - kescience_fitnessbrowser
   - nmdc_arkin
-  notebook_count: 13
-  figure_count: 39
+  notebook_count: 14
+  figure_count: 41
   key_data_artifacts:
   - file: data/gapmind_gap_candidates.tsv
     description: Organism-pathway pairs with dark genes near metabolic gaps
@@ -1960,9 +2290,10 @@ projects:
   - fitness_modules
   - essential_genome
   - module_conservation
-  enables: []
+  enables:
+  - truly_dark_genes
   has_provenance: true
-  date_completed: 2026-02
+  date_completed: 2026-03
 - id: fw300_metabolic_consistency
   title: Metabolic Consistency of Pseudomonas FW300-N2E3
   status: complete
@@ -2350,6 +2681,7 @@ projects:
   - field_vs_lab_fitness
   enables:
   - bacdive_metal_validation
+  - bacdive_phenotype_metal_tolerance
   - counter_ion_effects
   - metal_specificity
   - pathway_capability_dependency
@@ -3516,6 +3848,80 @@ projects:
   enables: []
   has_provenance: true
   date_completed: 2026-02
+- id: snipe_defense_system
+  title: 'SNIPE Defense System: Prevalence and Taxonomic Distribution in the BERDL Pangenome'
+  status: complete
+  research_question: How prevalent are SNIPE (Surface-associated Nuclease Inhibiting Phage Entry) homologues across the 293K-genome
+    BERDL pangenome, and does their taxonomic distribution, environmental context, or pangenome status (core vs. accessory)
+    reveal ecological patterns of phage defense?
+  key_findings:
+  - SNIPE resolves the phage resistance vs. metabolic cost trade-off
+  - SNIPE is widespread (1,696 species, 33 phyla)
+  - SNIPE genes are predominantly accessory (86.7%)
+  - The SNIPE nuclease domain is PF13455 (Mug113), not PF01541 (GIY-YIG)
+  - SNIPE-bearing species occupy distinct environmental niches
+  - SNIPE detected in phage therapy target (Klebsiella)
+  - Functional annotations are consistent with SNIPE
+  tags:
+  - HGT
+  - co-occurrence
+  - cofitness
+  - correlation
+  - dark-genes
+  - defense
+  - ecotype
+  - enrichment
+  - essential-genes
+  - fitness
+  - gene-annotation
+  - metabolism
+  - mobile-elements
+  - modules
+  - pangenome
+  - pathway-analysis
+  organisms:
+  - 48 organisms
+  - 48 Fitness Browser organisms
+  - 48 Fitness Browser organisms
+  - 6 organisms
+  - 33 bacteria
+  databases_used:
+  - kbase_ke_pangenome
+  - kescience_fitnessbrowser
+  - phagefoundry
+  notebook_count: 4
+  figure_count: 3
+  key_data_artifacts: []
+  references:
+  - id: saxton2026
+    title: A membrane-bound nuclease directly cleaves phage DNA during genome injection
+    doi: 10.1038/s41586-026-10207-1
+    pmid: '41741653'
+    type: primary_data_source
+  - id: burmeister2021
+    title: None
+    doi: null
+    pmid: '34032565'
+    type: supporting
+  - id: price2018
+    title: Mutant phenotypes for thousands of bacterial genes of unknown or predicted function
+    doi: null
+    pmid: null
+    type: methodology
+  - id: gaborieau2024
+    title: None
+    doi: null
+    pmid: '39482383'
+    type: supporting
+  - id: goormaghtigh2025
+    title: AlphaEarth Environmental Embeddings
+    doi: null
+    pmid: null
+    type: supporting
+  depends_on: []
+  enables: []
+  has_provenance: true
+  date_completed: 2026-03
 - id: temporal_core_dynamics
   title: Temporal Core Genome Dynamics
   status: proposed
@@ -3536,6 +3942,122 @@ projects:
   enables: []
   has_provenance: true
   date_completed: null
+- id: truly_dark_genes
+  title: Truly Dark Genes — What Remains Unknown After Modern Annotation?
+  status: complete
+  research_question: Among the ~6,400 Fitness Browser genes that remain functionally unannotated even after bakta v1.12.0
+    reannotation, what distinguishes them from "annotation-lag" dark matter, and can their fitness phenotypes, genomic context,
+    and sparse annotations prioritize them for experimental characterization?
+  key_findings:
+  - Only 16.3% of 'dark matter' resists modern annotation
+  - Truly dark genes are structurally distinct from annotation-lag genes
+  - Annotation databases recognize the sequences but not the function
+  - 96% of truly dark genes have at least one partial annotation clue
+  - Truly dark genes are enriched in accessory genomes and show HGT signatures
+  - Stress enrichment hypothesis rejected
+  - 100 top candidates prioritized for experimental characterization
+  tags:
+  - HGT
+  - cofitness
+  - conservation
+  - dark-genes
+  - defense
+  - enrichment
+  - essential-genes
+  - fitness
+  - gene-annotation
+  - metabolism
+  - metal-stress
+  - mobile-elements
+  - modules
+  - pangenome
+  - pathway-analysis
+  organisms:
+  - 48 Fitness Browser organisms
+  - 48 organisms
+  - 19 organisms
+  - 19 organisms
+  - 16 organisms
+  databases_used:
+  - kbase_ke_pangenome
+  - kescience_fitnessbrowser
+  notebook_count: 6
+  figure_count: 9
+  key_data_artifacts: []
+  references:
+  - id: price2018
+    title: Mutant phenotypes for thousands of bacterial genes of unknown function
+    doi: null
+    pmid: '29769716'
+    type: primary_data_source
+  - id: price2024
+    title: A comprehensive update to the Fitness Browser
+    doi: 10.1128/msystems.00470-24
+    pmid: null
+    type: supporting
+  - id: arkin2018
+    title: 'KBase: The United States Department of Energy Systems Biology Knowledgebase'
+    doi: null
+    pmid: '29979655'
+    type: methodology
+  - id: wetmore2015
+    title: Rapid quantification of mutant fitness in diverse bacteria by sequencing randomly bar-coded transposons
+    doi: null
+    pmid: '25968644'
+    type: methodology
+  - id: schwengers2021
+    title: 'Bakta: rapid and standardized annotation of bacterial genomes via alignment-free sequence identification'
+    doi: null
+    pmid: '34739369'
+    type: methodology
+  - id: cantalapiedra2021
+    title: 'eggNOG-mapper v2: functional annotation, orthology assignments, and domain prediction at the metagenomic scale'
+    doi: null
+    pmid: '34597405'
+    type: methodology
+  - id: makarova2019
+    title: Towards functional characterization of archaeal genomic dark matter
+    doi: null
+    pmid: '30647141'
+    type: supporting
+  - id: pavlopoulos2023
+    title: Unraveling the functional dark matter through global metagenomics
+    doi: null
+    pmid: '37821698'
+    type: supporting
+  - id: peters2019
+    title: Enabling genetic analysis of diverse bacteria with Mobile-CRISPRi
+    doi: null
+    pmid: '30617347'
+    type: methodology
+  - id: siew2003
+    title: Analysis of singleton ORFans in fully sequenced microbial genomes
+    doi: null
+    pmid: '14517976'
+    type: review
+  - id: daubin2003
+    title: The source of laterally transferred genes in bacterial genomes
+    doi: null
+    pmid: '12952534'
+    type: supporting
+  - id: vankempen2024
+    title: Fast and accurate protein structure search with Foldseek
+    doi: null
+    pmid: '37156916'
+    type: methodology
+  - id: oliver2000
+    title: Guilt-by-association goes global
+    doi: null
+    pmid: null
+    type: supporting
+  depends_on:
+  - functional_dark_matter
+  - conservation_vs_fitness
+  - fitness_modules
+  - essential_genome
+  enables: []
+  has_provenance: true
+  date_completed: 2026-03
 - id: webofmicrobes_explorer
   title: Web of Microbes Data Explorer
   status: complete

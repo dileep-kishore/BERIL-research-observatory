@@ -1,6 +1,6 @@
 version: 1
-generated_at: '2026-03-10T02:26:30'
-figure_count: 330
+generated_at: '2026-03-19T16:43:57'
+figure_count: 383
 figures:
 - project: acinetobacter_adp1_explorer
   file: data_coverage_by_modality.png
@@ -325,6 +325,215 @@ figures:
   caption: null
   notebook: null
   tags: []
+- project: amr_pangenome_atlas
+  file: amr_conservation_vs_baseline.png
+  path: projects/amr_pangenome_atlas/figures/amr_conservation_vs_baseline.png
+  caption: AMR conservation vs pangenome baseline
+  notebook: null
+  tags:
+  - conservation
+  - pangenome
+- project: amr_pangenome_atlas
+  file: amr_mechanism_conservation.png
+  path: projects/amr_pangenome_atlas/figures/amr_mechanism_conservation.png
+  caption: Conservation by AMR mechanism
+  notebook: 01_amr_census.ipynb, 02_conservation_patterns.ipynb
+  tags:
+  - conservation
+- project: amr_pangenome_atlas
+  file: amr_gene_families_core_fraction.png
+  path: projects/amr_pangenome_atlas/figures/amr_gene_families_core_fraction.png
+  caption: Top 30 AMR gene families by core fraction
+  notebook: 01_amr_census.ipynb, 02_conservation_patterns.ipynb
+  tags:
+  - conservation
+- project: amr_pangenome_atlas
+  file: amr_hotspot_families.png
+  path: projects/amr_pangenome_atlas/figures/amr_hotspot_families.png
+  caption: AMR hotspot families
+  notebook: 02_conservation_patterns.ipynb
+  tags: []
+- project: amr_pangenome_atlas
+  file: amr_openness_by_phylum.png
+  path: projects/amr_pangenome_atlas/figures/amr_openness_by_phylum.png
+  caption: AMR vs pangenome openness by phylum
+  notebook: 02_conservation_patterns.ipynb
+  tags:
+  - pangenome
+- project: amr_pangenome_atlas
+  file: amr_cog_enrichment.png
+  path: projects/amr_pangenome_atlas/figures/amr_cog_enrichment.png
+  caption: COG enrichment in AMR genes
+  notebook: 01_amr_census.ipynb, 03_phylogenetic_distribution.ipynb
+  tags:
+  - enrichment
+  - gene-annotation
+- project: amr_pangenome_atlas
+  file: amr_by_environment.png
+  path: projects/amr_pangenome_atlas/figures/amr_by_environment.png
+  caption: AMR by isolation environment
+  notebook: 04_functional_context.ipynb
+  tags: []
+- project: amr_pangenome_atlas
+  file: amr_alphaearth_diversity.png
+  path: projects/amr_pangenome_atlas/figures/amr_alphaearth_diversity.png
+  caption: AlphaEarth environmental diversity vs AMR
+  notebook: 04_functional_context.ipynb
+  tags:
+  - ecotype
+- project: amr_pangenome_atlas
+  file: amr_fitness_distribution.png
+  path: projects/amr_pangenome_atlas/figures/amr_fitness_distribution.png
+  caption: AMR gene fitness distribution
+  notebook: 05_environmental_distribution.ipynb
+  tags:
+  - fitness
+- project: amr_pangenome_atlas
+  file: amr_conservation_per_species.png
+  path: projects/amr_pangenome_atlas/figures/amr_conservation_per_species.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_pangenome_atlas
+  file: amr_hit_quality_distributions.png
+  path: projects/amr_pangenome_atlas/figures/amr_hit_quality_distributions.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_pangenome_atlas
+  file: amr_mechanism_by_phylum.png
+  path: projects/amr_pangenome_atlas/figures/amr_mechanism_by_phylum.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_pangenome_atlas
+  file: amr_phylum_distribution.png
+  path: projects/amr_pangenome_atlas/figures/amr_phylum_distribution.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_pangenome_atlas
+  file: amr_species_density_distribution.png
+  path: projects/amr_pangenome_atlas/figures/amr_species_density_distribution.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_pangenome_atlas
+  file: amr_vs_pangenome_structure.png
+  path: projects/amr_pangenome_atlas/figures/amr_vs_pangenome_structure.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_pangenome_atlas
+  file: fig1_amr_overview.png
+  path: projects/amr_pangenome_atlas/figures/fig1_amr_overview.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: nb02_variation_landscape.png
+  path: projects/amr_strain_variation/figures/nb02_variation_landscape.png
+  caption: Variation landscape showing prevalence classes, variability vs openness, Jaccard diversity by phylum, and prevalence
+    by mechanism
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: nb03_cooccurrence.png
+  path: projects/amr_strain_variation/figures/nb03_cooccurrence.png
+  caption: Co-occurrence analysis showing island size distribution, observed vs null phi, and islands per species
+  notebook: 02_variation_metrics.ipynb
+  tags:
+  - co-occurrence
+- project: amr_strain_variation
+  file: nb04_phylogenetic_signal.png
+  path: projects/amr_strain_variation/figures/nb04_phylogenetic_signal.png
+  caption: Phylogenetic signal showing Mantel r distribution, core vs non-core, and signal vs diversity
+  notebook: 03_cooccurrence_islands.ipynb
+  tags: []
+- project: amr_strain_variation
+  file: nb05_Klebsiella_pneumoniae_ecotypes.png
+  path: projects/amr_strain_variation/figures/nb05_Klebsiella_pneumoniae_ecotypes.png
+  caption: One in five species has distinct AMR ecotypes
+  notebook: 05_amr_ecotypes.ipynb
+  tags: []
+- project: amr_strain_variation
+  file: nb05_Staphylococcus_aureus_ecotypes.png
+  path: projects/amr_strain_variation/figures/nb05_Staphylococcus_aureus_ecotypes.png
+  caption: One in five species has distinct AMR ecotypes
+  notebook: 05_amr_ecotypes.ipynb
+  tags: []
+- project: amr_strain_variation
+  file: nb05_Salmonella_enterica_ecotypes.png
+  path: projects/amr_strain_variation/figures/nb05_Salmonella_enterica_ecotypes.png
+  caption: One in five species has distinct AMR ecotypes
+  notebook: 05_amr_ecotypes.ipynb
+  tags: []
+- project: amr_strain_variation
+  file: nb05_Pseudomonas_aeruginosa_ecotypes.png
+  path: projects/amr_strain_variation/figures/nb05_Pseudomonas_aeruginosa_ecotypes.png
+  caption: One in five species has distinct AMR ecotypes
+  notebook: 05_amr_ecotypes.ipynb
+  tags: []
+- project: amr_strain_variation
+  file: nb05_Acinetobacter_baumannii_ecotypes.png
+  path: projects/amr_strain_variation/figures/nb05_Acinetobacter_baumannii_ecotypes.png
+  caption: One in five species has distinct AMR ecotypes
+  notebook: 05_amr_ecotypes.ipynb
+  tags: []
+- project: amr_strain_variation
+  file: nb06_temporal_bacdive.png
+  path: projects/amr_strain_variation/figures/nb06_temporal_bacdive.png
+  caption: No significant temporal trends in AMR accumulation after multiple-testing correction
+  notebook: 06_temporal_bacdive.ipynb
+  tags: []
+- project: amr_strain_variation
+  file: fig1_variation_landscape.pdf
+  path: projects/amr_strain_variation/figures/fig1_variation_landscape.pdf
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: fig1_variation_landscape.png
+  path: projects/amr_strain_variation/figures/fig1_variation_landscape.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: fig2_resistance_islands.pdf
+  path: projects/amr_strain_variation/figures/fig2_resistance_islands.pdf
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: fig2_resistance_islands.png
+  path: projects/amr_strain_variation/figures/fig2_resistance_islands.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: fig3_phylogenetic_signal.pdf
+  path: projects/amr_strain_variation/figures/fig3_phylogenetic_signal.pdf
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: fig3_phylogenetic_signal.png
+  path: projects/amr_strain_variation/figures/fig3_phylogenetic_signal.png
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: fig4_ecotypes_temporal.pdf
+  path: projects/amr_strain_variation/figures/fig4_ecotypes_temporal.pdf
+  caption: null
+  notebook: null
+  tags: []
+- project: amr_strain_variation
+  file: fig4_ecotypes_temporal.png
+  path: projects/amr_strain_variation/figures/fig4_ecotypes_temporal.png
+  caption: null
+  notebook: null
+  tags: []
 - project: aromatic_catabolism_network
   file: support_network_categories.png
   path: projects/aromatic_catabolism_network/figures/support_network_categories.png
@@ -407,6 +616,42 @@ figures:
   notebook: 01_bacdive_pangenome_bridge.ipynb
   tags:
   - metal-stress
+- project: bacdive_phenotype_metal_tolerance
+  file: univariate_effect_sizes.png
+  path: projects/bacdive_phenotype_metal_tolerance/figures/univariate_effect_sizes.png
+  caption: Univariate effect sizes
+  notebook: null
+  tags: []
+- project: bacdive_phenotype_metal_tolerance
+  file: model_comparison.png
+  path: projects/bacdive_phenotype_metal_tolerance/figures/model_comparison.png
+  caption: Model comparison
+  notebook: 03_univariate_associations.ipynb
+  tags: []
+- project: bacdive_phenotype_metal_tolerance
+  file: feature_completeness.png
+  path: projects/bacdive_phenotype_metal_tolerance/figures/feature_completeness.png
+  caption: Feature completeness
+  notebook: 03_univariate_associations.ipynb
+  tags: []
+- project: bacdive_phenotype_metal_tolerance
+  file: shap_summary.png
+  path: projects/bacdive_phenotype_metal_tolerance/figures/shap_summary.png
+  caption: SHAP summary
+  notebook: 03_univariate_associations.ipynb
+  tags: []
+- project: bacdive_phenotype_metal_tolerance
+  file: coverage_waterfall.png
+  path: projects/bacdive_phenotype_metal_tolerance/figures/coverage_waterfall.png
+  caption: Coverage waterfall
+  notebook: 04_multivariate_model.ipynb
+  tags: []
+- project: bacdive_phenotype_metal_tolerance
+  file: fb_bacdive_phenotype_table.png
+  path: projects/bacdive_phenotype_metal_tolerance/figures/fb_bacdive_phenotype_table.png
+  caption: FB-BacDive phenotype table
+  notebook: 04_multivariate_model.ipynb
+  tags: []
 - project: cofitness_coinheritance
   file: fig1_cofit_cooccurrence.png
   path: projects/cofitness_coinheritance/figures/fig1_cofit_cooccurrence.png
@@ -1375,29 +1620,42 @@ figures:
   notebook: 09_final_synthesis.ipynb
   tags: []
 - project: functional_dark_matter
+  file: fig33_bakta_reclassification.png
+  path: projects/functional_dark_matter/figures/fig33_bakta_reclassification.png
+  caption: Bakta reclassification breakdown
+  notebook: 09_final_synthesis.ipynb
+  tags:
+  - modules
+- project: functional_dark_matter
+  file: fig34_bakta_coverage_heatmap.png
+  path: projects/functional_dark_matter/figures/fig34_bakta_coverage_heatmap.png
+  caption: Bakta coverage heatmap
+  notebook: 09_final_synthesis.ipynb
+  tags: []
+- project: functional_dark_matter
   file: fig16_h1b_test.png
   path: projects/functional_dark_matter/figures/fig16_h1b_test.png
   caption: 'H1b formal test: stress vs carbon/nitrogen accessory rates'
-  notebook: 09_final_synthesis.ipynb
+  notebook: 12_bakta_enrichment.ipynb
   tags: []
 - project: functional_dark_matter
   file: fig17_concordance_comparison.png
   path: projects/functional_dark_matter/figures/fig17_concordance_comparison.png
   caption: Dark vs annotated gene concordance distributions
-  notebook: 09_final_synthesis.ipynb
+  notebook: 12_bakta_enrichment.ipynb
   tags: []
 - project: functional_dark_matter
   file: fig31_statistical_tests.png
   path: projects/functional_dark_matter/figures/fig31_statistical_tests.png
   caption: Statistical tests summary
-  notebook: 09_final_synthesis.ipynb
+  notebook: 12_bakta_enrichment.ipynb
   tags:
   - modules
 - project: functional_dark_matter
   file: fig29_robust_ranks.png
   path: projects/functional_dark_matter/figures/fig29_robust_ranks.png
   caption: Robust rank indicators
-  notebook: 09_final_synthesis.ipynb
+  notebook: 12_bakta_enrichment.ipynb
   tags:
   - modules
 - project: fw300_metabolic_consistency
@@ -2208,6 +2466,80 @@ figures:
   path: projects/respiratory_chain_wiring/figures/proteomics_respiratory.png
   caption: 'Proteomics: NADH dehydrogenase expression vs all genes'
   notebook: 04_cross_species_respiratory.ipynb
+  tags: []
+- project: snipe_defense_system
+  file: snipe_phylum_distribution.png
+  path: projects/snipe_defense_system/figures/snipe_phylum_distribution.png
+  caption: SNIPE is widespread (1,696 species, 33 phyla)
+  notebook: 02_taxonomic_distribution.ipynb
+  tags: []
+- project: snipe_defense_system
+  file: snipe_pangenome_status.png
+  path: projects/snipe_defense_system/figures/snipe_pangenome_status.png
+  caption: SNIPE genes are predominantly accessory (86.7%)
+  notebook: 02_taxonomic_distribution.ipynb
+  tags: []
+- project: snipe_defense_system
+  file: snipe_alphaearth_pca.png
+  path: projects/snipe_defense_system/figures/snipe_alphaearth_pca.png
+  caption: SNIPE-bearing species occupy distinct environmental niches
+  notebook: 03_environmental_analysis.ipynb
+  tags: []
+- project: truly_dark_genes
+  file: fig01_organism_distribution.png
+  path: projects/truly_dark_genes/figures/fig01_organism_distribution.png
+  caption: Organism distribution of truly dark genes
+  notebook: null
+  tags:
+  - dark-genes
+- project: truly_dark_genes
+  file: fig02_gene_length.png
+  path: projects/truly_dark_genes/figures/fig02_gene_length.png
+  caption: Gene length comparison
+  notebook: 01_truly_dark_census.ipynb
+  tags: []
+- project: truly_dark_genes
+  file: fig03_summary_comparison.png
+  path: projects/truly_dark_genes/figures/fig03_summary_comparison.png
+  caption: Summary comparison
+  notebook: 01_truly_dark_census.ipynb
+  tags: []
+- project: truly_dark_genes
+  file: fig04_clue_coverage.png
+  path: projects/truly_dark_genes/figures/fig04_clue_coverage.png
+  caption: Clue coverage
+  notebook: 02_spark_enrichment.ipynb
+  tags: []
+- project: truly_dark_genes
+  file: fig05_annotation_tiers.png
+  path: projects/truly_dark_genes/figures/fig05_annotation_tiers.png
+  caption: Annotation tiers
+  notebook: 02_spark_enrichment.ipynb
+  tags:
+  - gene-annotation
+- project: truly_dark_genes
+  file: fig06_ortholog_breadth.png
+  path: projects/truly_dark_genes/figures/fig06_ortholog_breadth.png
+  caption: Ortholog breadth
+  notebook: 03_sparse_annotation_mining.ipynb
+  tags: []
+- project: truly_dark_genes
+  file: fig07_gc_deviation.png
+  path: projects/truly_dark_genes/figures/fig07_gc_deviation.png
+  caption: GC deviation
+  notebook: 03_sparse_annotation_mining.ipynb
+  tags: []
+- project: truly_dark_genes
+  file: fig08_genomic_context.png
+  path: projects/truly_dark_genes/figures/fig08_genomic_context.png
+  caption: Genomic context
+  notebook: 03_sparse_annotation_mining.ipynb
+  tags: []
+- project: truly_dark_genes
+  file: fig09_prioritization.png
+  path: projects/truly_dark_genes/figures/fig09_prioritization.png
+  caption: Prioritization
+  notebook: 05_genomic_context.ipynb
   tags: []
 - project: webofmicrobes_explorer
   file: enigma_metabolite_heatmap.png

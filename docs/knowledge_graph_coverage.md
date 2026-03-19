@@ -1,5 +1,5 @@
 # Knowledge Graph Coverage Report
-**Last updated**: 2026-03-10 | **Projects in registry**: 41
+**Last updated**: 2026-03-19 | **Projects in registry**: 46
 
 ## Asset Counts
 - Entities: 80 (organisms=20, genes=15, pathways=10, methods=14, concepts=21)
@@ -8,22 +8,22 @@
 - Timeline events: 43
 
 ## Project Coverage
-- Entity references: 24/41 projects
-- Relation evidence: 14/41 projects
-- Hypothesis origins: 14/41 projects
-- Timeline events: 14/41 projects
+- Entity references: 24/46 projects
+- Relation evidence: 14/46 projects
+- Hypothesis origins: 14/46 projects
+- Timeline events: 14/46 projects
 
-### Missing from Timeline (27)
-`acinetobacter_adp1_explorer`, `bacdive_metal_validation`, `conservation_fitness_synthesis`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `essential_metabolome`, `fitness_effects_conservation`, `fitness_modules`, `functional_dark_matter`, `fw300_metabolic_consistency`, `lab_field_ecology`, `metabolic_capability_dependency`, `metal_specificity`, ... (+12 more)
+### Missing from Timeline (32)
+`acinetobacter_adp1_explorer`, `amr_pangenome_atlas`, `amr_strain_variation`, `bacdive_metal_validation`, `bacdive_phenotype_metal_tolerance`, `conservation_fitness_synthesis`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `essential_metabolome`, `fitness_effects_conservation`, `fitness_modules`, `functional_dark_matter`, `fw300_metabolic_consistency`, ... (+17 more)
 
-### Missing from Entity References (17)
-`bacdive_metal_validation`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `fw300_metabolic_consistency`, `lab_field_ecology`, `metabolic_capability_dependency`, `metal_specificity`, `nmdc_community_metabolic_ecology`, `openness_functional_composition`, `pangenome_pathway_ecology`, `pangenome_pathway_geography`, `pathway_capability_dependency`, `prophage_ecology`, `resistance_hotspots`, ... (+2 more)
+### Missing from Entity References (22)
+`amr_pangenome_atlas`, `amr_strain_variation`, `bacdive_metal_validation`, `bacdive_phenotype_metal_tolerance`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `fw300_metabolic_consistency`, `lab_field_ecology`, `metabolic_capability_dependency`, `metal_specificity`, `nmdc_community_metabolic_ecology`, `openness_functional_composition`, `pangenome_pathway_ecology`, `pangenome_pathway_geography`, ... (+7 more)
 
-### Missing from Relation Evidence (27)
-`acinetobacter_adp1_explorer`, `adp1_deletion_phenotypes`, `bacdive_metal_validation`, `conservation_fitness_synthesis`, `costly_dispensable_genes`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `field_vs_lab_fitness`, `fitness_effects_conservation`, `functional_dark_matter`, `fw300_metabolic_consistency`, `lab_field_ecology`, `metabolic_capability_dependency`, ... (+12 more)
+### Missing from Relation Evidence (32)
+`acinetobacter_adp1_explorer`, `adp1_deletion_phenotypes`, `amr_pangenome_atlas`, `amr_strain_variation`, `bacdive_metal_validation`, `bacdive_phenotype_metal_tolerance`, `conservation_fitness_synthesis`, `costly_dispensable_genes`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `field_vs_lab_fitness`, `fitness_effects_conservation`, `functional_dark_matter`, ... (+17 more)
 
-### Missing from Hypothesis Origins (27)
-`acinetobacter_adp1_explorer`, `bacdive_metal_validation`, `conservation_fitness_synthesis`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `essential_metabolome`, `fitness_effects_conservation`, `fitness_modules`, `functional_dark_matter`, `fw300_metabolic_consistency`, `lab_field_ecology`, `metabolic_capability_dependency`, `metal_specificity`, ... (+12 more)
+### Missing from Hypothesis Origins (32)
+`acinetobacter_adp1_explorer`, `amr_pangenome_atlas`, `amr_strain_variation`, `bacdive_metal_validation`, `bacdive_phenotype_metal_tolerance`, `conservation_fitness_synthesis`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `essential_metabolome`, `fitness_effects_conservation`, `fitness_modules`, `functional_dark_matter`, `fw300_metabolic_consistency`, ... (+17 more)
 
 ## Integrity Checks
 - Unknown entity IDs referenced in relations (0): _None_

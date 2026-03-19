@@ -1,5 +1,5 @@
 # Knowledge Graph Research Gaps
-**Last updated**: 2026-03-10 | **Projects in registry**: 41
+**Last updated**: 2026-03-19 | **Projects in registry**: 46
 
 ## 1) Organisms with Sparse Cross-Project Coverage
 - `org_azobra` (Azospirillum brasilense) appears in 1 project(s): `essential_metabolome`
@@ -46,8 +46,8 @@
 ## 3) Hypotheses Needing Validation
 - `H020` (testing) from `metal_fitness_atlas`: Pseudomonas putida KT2440 should have extensive metal fitness data given its role in bioremediation.
 
-## 4) Projects Missing Timeline Events (27)
-`acinetobacter_adp1_explorer`, `bacdive_metal_validation`, `conservation_fitness_synthesis`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `essential_metabolome`, `fitness_effects_conservation`, `fitness_modules`, `functional_dark_matter`, `fw300_metabolic_consistency`, `lab_field_ecology`, `metabolic_capability_dependency`, `metal_specificity`, `module_conservation`, `nmdc_community_metabolic_ecology`, `openness_functional_composition`, `pangenome_openness`, `pangenome_pathway_ecology`, ... (+7 more)
+## 4) Projects Missing Timeline Events (32)
+`acinetobacter_adp1_explorer`, `amr_pangenome_atlas`, `amr_strain_variation`, `bacdive_metal_validation`, `bacdive_phenotype_metal_tolerance`, `conservation_fitness_synthesis`, `counter_ion_effects`, `ecotype_env_reanalysis`, `enigma_contamination_functional_potential`, `env_embedding_explorer`, `essential_metabolome`, `fitness_effects_conservation`, `fitness_modules`, `functional_dark_matter`, `fw300_metabolic_consistency`, `lab_field_ecology`, `metabolic_capability_dependency`, `metal_specificity`, `module_conservation`, `nmdc_community_metabolic_ecology`, ... (+12 more)
 
 ## 5) Unexplored Organism-Pathway Pairs with Shared Project Context
 - `org_adp1` × `path_beta_ketoadipate` (Beta-ketoadipate pathway): co-mentioned in 4 project(s) `adp1_deletion_phenotypes`, `adp1_triple_essentiality`, `aromatic_catabolism_network`, `respiratory_chain_wiring` but no direct relation edge

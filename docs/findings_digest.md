@@ -1,5 +1,5 @@
 # Findings Digest
-**Last updated**: 2026-03-10 | **Projects**: 41 | **Findings**: ~195
+**Last updated**: 2026-03-19 | **Projects**: 46 | **Findings**: ~228
 
 ## acinetobacter_adp1_explorer (2026-02, complete)
 **Q**: What is the scope and structure of a comprehensive ADP1 database, and how do its annotations, metabolic models, and phenotype data intersect with BERDL collections (pangenome, biochemistry, fitness, PhageFoundry)?
@@ -33,6 +33,24 @@
 9. **Fitness Is the Best Predictor of Essentiality** — [REPORT](../projects/adp1_triple_essentiality/REPORT.md)
 10. **Proteomics Strongly Correlates with Essentiality** — [REPORT](../projects/adp1_triple_essentiality/REPORT.md)
 
+## amr_pangenome_atlas (2026-03, complete)
+**Q**: What is the distribution, conservation, phylogenetic structure, functional context, and environmental association of antimicrobial resistance (AMR) genes across 27,000 bacterial species pangenomes?
+1. **AMR Genes Are Massively Depleted from the Core Genome** — [REPORT](../projects/amr_pangenome_atlas/REPORT.md)
+2. **Intrinsic vs Acquired Resistance Creates a Conservation Dichotomy** — [REPORT](../projects/amr_pangenome_atlas/REPORT.md)
+3. **AMR Hotspots Are Concentrated in Clinical Pathogens** — [REPORT](../projects/amr_pangenome_atlas/REPORT.md)
+4. **AMR Genes Are Enriched in Defense and Ion Transport Functions** — [REPORT](../projects/amr_pangenome_atlas/REPORT.md)
+5. **Clinical Species Carry 2.7x More AMR — and It's More Acquired** — [REPORT](../projects/amr_pangenome_atlas/REPORT.md)
+6. **AMR Genes Are Not a Fitness Burden in Lab Conditions** — [REPORT](../projects/amr_pangenome_atlas/REPORT.md)
+
+## amr_strain_variation (2026-03, complete)
+**Q**: Within a species, how does the AMR repertoire vary between strains, and what drives that variation?
+1. **The majority of AMR genes are variable or rare within species** — [REPORT](../projects/amr_strain_variation/REPORT.md)
+2. **Resistance islands are widespread and tightly co-inherited** — [REPORT](../projects/amr_strain_variation/REPORT.md)
+3. **AMR variation tracks phylogeny in the majority of species — but acquired genes show stronger signal than intrinsic** — [REPORT](../projects/amr_strain_variation/REPORT.md)
+4. **One in five species has distinct AMR ecotypes** — [REPORT](../projects/amr_strain_variation/REPORT.md)
+5. **No significant temporal trends in AMR accumulation after multiple-testing correction** — [REPORT](../projects/amr_strain_variation/REPORT.md)
+6. **Host-associated species carry more AMR genes than environmental species** — [REPORT](../projects/amr_strain_variation/REPORT.md)
+
 ## aromatic_catabolism_network (2026-02, complete)
 **Q**: Why does aromatic catabolism in *Acinetobacter baylyi* ADP1 require Complex I (NADH dehydrogenase), iron acquisition, and PQQ biosynthesis when growth on other carbon sources does not?
 1. **Aromatic catabolism requires a 51-gene support network spanning 4 metabolic subsystems** — [REPORT](../projects/aromatic_catabolism_network/REPORT.md)
@@ -48,6 +66,16 @@
 3. **42,227 BacDive Strains Linked to Pangenome Metal Scores** — [REPORT](../projects/bacdive_metal_validation/REPORT.md)
 4. **Metal Utilization Phenotypes: Inconclusive** — [REPORT](../projects/bacdive_metal_validation/REPORT.md)
 5. **Power Analysis: The Heavy Metal Group Was At Detection Limit** — [REPORT](../projects/bacdive_metal_validation/REPORT.md)
+
+## bacdive_phenotype_metal_tolerance (2026-03, complete)
+**Q**: Can BacDive-measured bacterial phenotypes (Gram stain, oxygen tolerance, metabolite utilization, enzyme activities) predict metal tolerance as measured by Fitness Browser experiments and the Metal Fitness Atlas?
+1. **Gram-Negative Bacteria Have Significantly Higher Metal Tolerance Scores (d=-0.61)** — [REPORT](../projects/bacdive_phenotype_metal_tolerance/REPORT.md)
+2. **Seven of Ten Phenotype Features Are Individually Significant After FDR Correction** — [REPORT](../projects/bacdive_phenotype_metal_tolerance/REPORT.md)
+3. **Phenotype Features Add Nothing Beyond Taxonomy (Delta R² = -0.009)** — [REPORT](../projects/bacdive_phenotype_metal_tolerance/REPORT.md)
+4. **Urease-Positive Organisms Have Lower Metal Tolerance (H1e Reversed)** — [REPORT](../projects/bacdive_phenotype_metal_tolerance/REPORT.md)
+5. **Anaerobe vs Aerobe Difference Is Negligible (H1b Not Supported)** — [REPORT](../projects/bacdive_phenotype_metal_tolerance/REPORT.md)
+6. **SHAP Analysis Confirms Taxonomy and Gene Count Dominate** — [REPORT](../projects/bacdive_phenotype_metal_tolerance/REPORT.md)
+7. **Direct FB-BacDive Validation (n = 12)** — [REPORT](../projects/bacdive_phenotype_metal_tolerance/REPORT.md)
 
 ## cofitness_coinheritance (2026-02, complete)
 **Q**: Do genes with correlated fitness profiles (co-fit) tend to co-occur in the same genomes across a species' pangenome? Does functional coupling constrain which genes are gained and lost together?
@@ -176,7 +204,7 @@
 3. **Cross-Organism Alignment** — [REPORT](../projects/fitness_modules/REPORT.md)
 4. **Function Prediction** — [REPORT](../projects/fitness_modules/REPORT.md)
 
-## functional_dark_matter (2026-02, complete)
+## functional_dark_matter (2026-03, complete)
 **Q**: Which genes of unknown function across 48 bacteria have strong fitness phenotypes, and can biogeographic patterns, pathway gap analysis, and cross-organism fitness concordance — combined with existing function predictions and conservation data — prioritize them for experimental follow-up?
 1. **One in four bacterial genes is functionally dark, and 17,344 have experimentally measurable phenotypes** — [REPORT](../projects/functional_dark_matter/REPORT.md)
 2. **39,532 dark genes link to the pangenome; 6,142 belong to co-regulated fitness modules** — [REPORT](../projects/functional_dark_matter/REPORT.md)
@@ -294,6 +322,26 @@
 3. **The quinate-Complex I paradox is resolved by NADH flux rate, not total yield** — [REPORT](../projects/respiratory_chain_wiring/REPORT.md)
 4. **Cross-species NDH-2 presence does NOT predict reduced Complex I aromatic dependency** — [REPORT](../projects/respiratory_chain_wiring/REPORT.md)
 5. **Proteomics indicates respiratory wiring is metabolic, not transcriptional** — [REPORT](../projects/respiratory_chain_wiring/REPORT.md)
+
+## snipe_defense_system (2026-03, complete)
+**Q**: How prevalent are SNIPE (Surface-associated Nuclease Inhibiting Phage Entry) homologues across the 293K-genome BERDL pangenome, and does their taxonomic distribution, environmental context, or pangenome status (core vs. accessory) reveal ecological patterns of phage defense?
+1. **SNIPE resolves the phage resistance vs. metabolic cost trade-off** — [REPORT](../projects/snipe_defense_system/REPORT.md)
+2. **SNIPE is widespread (1,696 species, 33 phyla)** — [REPORT](../projects/snipe_defense_system/REPORT.md)
+3. **SNIPE genes are predominantly accessory (86.7%)** — [REPORT](../projects/snipe_defense_system/REPORT.md)
+4. **The SNIPE nuclease domain is PF13455 (Mug113), not PF01541 (GIY-YIG)** — [REPORT](../projects/snipe_defense_system/REPORT.md)
+5. **SNIPE-bearing species occupy distinct environmental niches** — [REPORT](../projects/snipe_defense_system/REPORT.md)
+6. **SNIPE detected in phage therapy target (Klebsiella)** — [REPORT](../projects/snipe_defense_system/REPORT.md)
+7. **Functional annotations are consistent with SNIPE** — [REPORT](../projects/snipe_defense_system/REPORT.md)
+
+## truly_dark_genes (2026-03, complete)
+**Q**: Among the ~6,400 Fitness Browser genes that remain functionally unannotated even after bakta v1.12.0 reannotation, what distinguishes them from "annotation-lag" dark matter, and can their fitness phenotypes, genomic context, and sparse annotations prioritize them for experimental characterization?
+1. **Only 16.3% of 'dark matter' resists modern annotation** — [REPORT](../projects/truly_dark_genes/REPORT.md)
+2. **Truly dark genes are structurally distinct from annotation-lag genes** — [REPORT](../projects/truly_dark_genes/REPORT.md)
+3. **Annotation databases recognize the sequences but not the function** — [REPORT](../projects/truly_dark_genes/REPORT.md)
+4. **96% of truly dark genes have at least one partial annotation clue** — [REPORT](../projects/truly_dark_genes/REPORT.md)
+5. **Truly dark genes are enriched in accessory genomes and show HGT signatures** — [REPORT](../projects/truly_dark_genes/REPORT.md)
+6. **Stress enrichment hypothesis rejected** — [REPORT](../projects/truly_dark_genes/REPORT.md)
+7. **100 top candidates prioritized for experimental characterization** — [REPORT](../projects/truly_dark_genes/REPORT.md)
 
 ## webofmicrobes_explorer (2026-02, complete)
 **Q**: What does the `kescience_webofmicrobes` exometabolomics collection contain, which organisms overlap with the Fitness Browser, and how well do metabolite uptake/release profiles connect to pangenome-predicted metabolic capabilities?
