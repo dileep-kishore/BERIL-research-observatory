@@ -534,8 +534,42 @@ class ContextDelivery:
                 except Exception:
                     logger.warning("Failed to load search hit %s", hit, exc_info=True)
         else:
+            # Browse the collection directory, then resolve each item's
+            # actual content file (OpenViking nests uploads under a
+            # temp child, so we list each item dir to find the leaf).
             uri = build_operational_collection_uri(collection)
-            items = self.browse(uri, tier=tier)
+            file_name = self._OPERATIONAL_FILE_NAMES[collection]
+            dir_entries = self.client.list_resources(uri)
+            items = []
+            for entry in dir_entries:
+                entry_uri = entry.get("uri", "")
+                file_uri = f"{entry_uri}/{file_name}"
+                try:
+                    # The file_uri is itself a directory; find the
+                    # actual content leaf inside it.
+                    children = self.client.list_resources(file_uri)
+                    if children:
+                        leaf_uri = children[0]["uri"]
+                        item = self._load_item(leaf_uri, tier)
+                        items.append(item)
+                except Exception:
+                    logger.debug("Could not load %s", file_uri)
+
+        # Enrich metadata from YAML body for filtering.
+        # OpenViking stores operational items as YAML content, but the
+        # parsed frontmatter metadata may be sparse.  Parse the body
+        # to ensure fields like status/category are available.
+        if status or category:
+            for item in items:
+                if not item.metadata.get("status") and not item.metadata.get("category"):
+                    try:
+                        parsed = yaml.safe_load(item.content)
+                        if isinstance(parsed, dict):
+                            for key in ("status", "category", "priority"):
+                                if key in parsed and key not in item.metadata:
+                                    item.metadata[key] = parsed[key]
+                    except Exception:
+                        pass
 
         if status:
             items = [i for i in items if i.metadata.get("status") == status]
