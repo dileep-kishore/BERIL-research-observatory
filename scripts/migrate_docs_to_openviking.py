@@ -2,31 +2,55 @@
 """Migrate docs/pitfalls.md, docs/research_ideas.md, docs/discoveries.md into OpenViking.
 
 Parses each markdown file into structured entries, enriches them via the
-CBORG LLM (gpt-5.4-mini), and uploads as clean markdown resources with
-proper frontmatter.  Also generates collection-level overviews.
+CBORG LLM (gpt-5.4-mini), stages everything locally, and uploads as a
+single batch — matching the project ingest pattern.
+
+Also generates collection-level overviews and cross-links to projects.
 
 Usage:
     uv run scripts/migrate_docs_to_openviking.py [--dry-run] [--no-enrich] [--only pitfalls|ideas|discoveries]
 
 Requires CBORG_API_KEY for LLM enrichment (skipped with --no-enrich).
-Source markdown files are read from git history if they no longer exist on disk.
+Source markdown files are read from docs/ or from git history if deleted.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
+import yaml
+
 from observatory_context._text import slugify
+from observatory_context.uris import _OPERATIONAL_COLLECTIONS, _ROOT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 # ---------------------------------------------------------------------------
-# Source file resolution (read from git if deleted)
+# Staging helpers (same pattern as viking_ingest.py)
+# ---------------------------------------------------------------------------
+
+
+def _write_file(base: Path, rel_path: str, content: str, metadata: dict | None = None) -> None:
+    """Stage a file with optional YAML frontmatter."""
+    dest = base / rel_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("w", encoding="utf-8") as fh:
+        if metadata:
+            fh.write("---\n")
+            fh.write(yaml.safe_dump(metadata, sort_keys=True))
+            fh.write("---\n\n")
+        fh.write(content)
+
+
+# ---------------------------------------------------------------------------
+# Source file resolution (read from disk or git history)
 # ---------------------------------------------------------------------------
 
 
@@ -35,22 +59,16 @@ def _read_source(rel_path: str) -> str | None:
     path = REPO_ROOT / rel_path
     if path.exists():
         return path.read_text(encoding="utf-8")
-    # Try git history — find the last commit where the file existed
     try:
         result = subprocess.run(
             ["git", "log", "--all", "--diff-filter=d", "--format=%H", "-1", "--", rel_path],
-            capture_output=True,
-            text=True,
-            cwd=REPO_ROOT,
+            capture_output=True, text=True, cwd=REPO_ROOT,
         )
         commit = result.stdout.strip()
         if not commit:
-            # Fallback: get the commit that deleted it, then use its parent
             result = subprocess.run(
                 ["git", "log", "--all", "--diff-filter=D", "--format=%H", "-1", "--", rel_path],
-                capture_output=True,
-                text=True,
-                cwd=REPO_ROOT,
+                capture_output=True, text=True, cwd=REPO_ROOT,
             )
             commit = result.stdout.strip()
             if commit:
@@ -58,9 +76,7 @@ def _read_source(rel_path: str) -> str | None:
         if commit:
             result = subprocess.run(
                 ["git", "show", f"{commit}:{rel_path}"],
-                capture_output=True,
-                text=True,
-                cwd=REPO_ROOT,
+                capture_output=True, text=True, cwd=REPO_ROOT,
             )
             if result.returncode == 0:
                 return result.stdout
@@ -75,7 +91,6 @@ def _read_source(rel_path: str) -> str | None:
 
 
 def _parse_pitfalls(text: str) -> list[dict]:
-    """Parse docs/pitfalls.md into individual pitfall entries."""
     entries: list[dict] = []
     parts = re.split(r"(?=^### )", text, flags=re.MULTILINE)
     category = "General"
@@ -105,22 +120,15 @@ def _parse_pitfalls(text: str) -> list[dict]:
         solution = solution_match.group(1).strip() if solution_match else ""
 
         slug = slugify(title)[:80]
-        entries.append(
-            {
-                "id": slug,
-                "title": title,
-                "category": category,
-                "project_ids": project_ids,
-                "problem": body,
-                "solution": solution,
-                "tags": [],
-            }
-        )
+        entries.append({
+            "id": slug, "title": title, "category": category,
+            "project_ids": project_ids, "problem": body,
+            "solution": solution, "tags": [],
+        })
     return entries
 
 
 def _parse_research_ideas(text: str) -> list[dict]:
-    """Parse docs/research_ideas.md into individual idea entries."""
     entries: list[dict] = []
     parts = re.split(r"(?=^### )", text, flags=re.MULTILINE)
 
@@ -140,7 +148,6 @@ def _parse_research_ideas(text: str) -> list[dict]:
             r"\*\*Research Question\*\*:?\s*(.+?)(?:\n\n|\n\*\*)", body, re.DOTALL
         )
         impact_match = re.search(r"\*\*Impact\*\*:?\s*(.+?)(?:\n\n|\n\*\*)", body, re.DOTALL)
-        location_match = re.search(r"\*\*Location\*\*:?\s*`?([^`\n]+)`?", body)
 
         approach: list[str] = []
         approach_match = re.search(r"\*\*Approach\*\*:?\s*\n((?:- .+\n?)+)", body)
@@ -152,11 +159,9 @@ def _parse_research_ideas(text: str) -> list[dict]:
             ]
 
         hypotheses: dict[str, str] = {}
-        hyp_matches = re.finditer(r"-\s+\*\*(\w+)\*\*:?\s*(.+?)(?:\n|$)", body)
-        for m in hyp_matches:
-            key = m.group(1)
-            if key in ("H1", "H0", "H2", "Hypothesis"):
-                hypotheses[key.lower()] = m.group(2).strip()
+        for m in re.finditer(r"-\s+\*\*(\w+)\*\*:?\s*(.+?)(?:\n|$)", body):
+            if m.group(1) in ("H1", "H0", "H2", "Hypothesis"):
+                hypotheses[m.group(1).lower()] = m.group(2).strip()
 
         deps: list[str] = []
         deps_match = re.search(r"\*\*Dependencies\*\*:?\s*\n((?:- .+\n?)+)", body)
@@ -180,30 +185,22 @@ def _parse_research_ideas(text: str) -> list[dict]:
         slug = slugify(title)[:80]
 
         entry: dict = {
-            "id": slug,
-            "title": title,
-            "status": status.upper(),
+            "id": slug, "title": title, "status": status.upper(),
             "priority": priority_match.group(1) if priority_match else "MEDIUM",
             "effort": effort_match.group(1).strip() if effort_match else "",
             "research_question": question_match.group(1).strip() if question_match else "",
-            "approach": approach,
-            "hypotheses": hypotheses,
+            "approach": approach, "hypotheses": hypotheses,
             "impact": impact_match.group(1).strip() if impact_match else "",
-            "dependencies": deps,
-            "progress": progress,
-            "tags": [],
+            "dependencies": deps, "progress": progress, "tags": [],
         }
         if source_project:
             entry["source_project"] = source_project
             entry["project_ids"] = [source_project]
-        if location_match:
-            entry["location"] = location_match.group(1).strip()
         entries.append(entry)
     return entries
 
 
 def _parse_discoveries(text: str) -> list[dict]:
-    """Parse docs/discoveries.md into individual discovery entries."""
     entries: list[dict] = []
     current_date = ""
     parts = re.split(r"(?=^### )", text, flags=re.MULTILINE)
@@ -225,11 +222,8 @@ def _parse_discoveries(text: str) -> list[dict]:
 
         slug = slugify(title)[:80]
         entry: dict = {
-            "id": slug,
-            "title": title,
-            "description": body,
-            "date": current_date,
-            "tags": [],
+            "id": slug, "title": title, "description": body,
+            "date": current_date, "tags": [],
         }
         if project_id:
             entry["project_ids"] = [project_id]
@@ -238,38 +232,73 @@ def _parse_discoveries(text: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Upload
+# Staging (enrich + write to local tree)
 # ---------------------------------------------------------------------------
 
 
-def _upload_entries(
-    delivery,
+def _stage_entries(
+    staging_dir: Path,
     collection: str,
     entries: list[dict],
+    extractor=None,
     *,
-    dry_run: bool = False,
     enrich: bool = True,
 ) -> int:
-    """Upload parsed entries to OpenViking via ContextDelivery."""
+    """Enrich entries via LLM and stage as markdown files in a local tree."""
+    from observatory_context.delivery import ContextDelivery
+
+    dir_name = _OPERATIONAL_COLLECTIONS[collection]
     count = 0
     total = len(entries)
+
     for i, entry in enumerate(entries, 1):
         item_id = entry.pop("id")
         title = entry.get("title", item_id)
-        if dry_run:
-            print(f"  [{i}/{total}] [dry-run] {collection}/{item_id}: {title}")
-            count += 1
-            continue
+        rel_path = f"{dir_name}/{item_id}.md"
 
-        try:
-            uri = delivery.add_operational(
-                collection, item_id, entry, enrich=enrich, wait=False,
-            )
-            print(f"  [{i}/{total}] {uri}")
-            count += 1
-        except Exception as exc:
-            print(f"  [{i}/{total}] ERROR {item_id}: {exc}", file=sys.stderr)
+        # LLM enrichment
+        if enrich and extractor:
+            try:
+                result = extractor.enrich_operational(collection, entry)
+                markdown = result["markdown"]
+                metadata = result["metadata"]
+            except Exception as exc:
+                print(f"  [{i}/{total}] LLM failed for {item_id}: {exc}", file=sys.stderr, flush=True)
+                markdown = ContextDelivery._fallback_markdown(collection, entry)
+                metadata = ContextDelivery._basic_metadata(collection, entry)
+        else:
+            markdown = ContextDelivery._fallback_markdown(collection, entry)
+            metadata = ContextDelivery._basic_metadata(collection, entry)
+
+        # Ensure core metadata
+        metadata.setdefault("title", title)
+        metadata.setdefault("kind", collection)
+
+        _write_file(staging_dir, rel_path, markdown, metadata=metadata)
+        print(f"  [{i}/{total}] {rel_path}", flush=True)
+        count += 1
+
     return count
+
+
+def _stage_overview(
+    staging_dir: Path,
+    collection: str,
+    entries: list[dict],
+    extractor,
+) -> bool:
+    """Generate and stage a collection-level overview."""
+    dir_name = _OPERATIONAL_COLLECTIONS[collection]
+    summaries = [f"{e.get('title', '')}: {str(e.get('description', e.get('problem', e.get('research_question', ''))))[:150]}" for e in entries]
+
+    try:
+        overview_md = extractor.generate_collection_overview(collection, summaries)
+        meta = {"title": f"{collection.replace('_', ' ').title()} Overview", "kind": "overview"}
+        _write_file(staging_dir, f"{dir_name}/_overview.md", overview_md, metadata=meta)
+        return True
+    except Exception as exc:
+        print(f"  Overview generation failed: {exc}", file=sys.stderr, flush=True)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -282,15 +311,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Parse and print without uploading")
     parser.add_argument("--no-enrich", action="store_true", help="Skip LLM enrichment")
     parser.add_argument(
-        "--only",
-        choices=["pitfalls", "ideas", "discoveries"],
-        default=None,
-        help="Migrate only one collection",
+        "--only", choices=["pitfalls", "ideas", "discoveries"],
+        default=None, help="Migrate only one collection",
     )
-    parser.add_argument(
-        "--overviews", action="store_true",
-        help="Generate collection-level overviews after migration",
-    )
+    parser.add_argument("--no-overviews", action="store_true", help="Skip collection overview generation")
     args = parser.parse_args(argv)
 
     collections: dict[str, tuple[str, str, callable]] = {
@@ -302,62 +326,90 @@ def main(argv: list[str] | None = None) -> int:
     if args.only:
         collections = {args.only: collections[args.only]}
 
-    delivery = None
-    if not args.dry_run:
-        from observatory_context.runtime import build_delivery
-
-        try:
-            delivery = build_delivery(require_live=True, with_extractor=not args.no_enrich)
-        except Exception as exc:
-            print(f"Error: OpenViking not reachable: {exc}", file=sys.stderr)
-            return 1
-
-        if not args.no_enrich and not delivery.extractor:
-            print(
-                "Warning: No CBORG extractor configured. "
-                "Set CBORG_API_KEY for LLM enrichment, or use --no-enrich.",
-                file=sys.stderr,
-            )
-
-    enrich = not args.no_enrich
-    total = 0
-
+    # Parse all sources first
+    all_parsed: dict[str, tuple[str, list[dict]]] = {}
     for name, (collection, doc_path, parser_fn) in collections.items():
         text = _read_source(doc_path)
         if text is None:
             print(f"Skipping {name}: {doc_path} not found (on disk or in git history)")
             continue
-
-        print(f"\n--- Migrating {name} from {doc_path} ---")
         entries = parser_fn(text)
-        print(f"Parsed {len(entries)} entries")
+        print(f"Parsed {len(entries)} {name} from {doc_path}")
+        all_parsed[name] = (collection, entries)
 
-        count = _upload_entries(
-            delivery, collection, entries,
-            dry_run=args.dry_run, enrich=enrich,
+    if not all_parsed:
+        print("Nothing to migrate.")
+        return 0
+
+    if args.dry_run:
+        total = sum(len(entries) for _, entries in all_parsed.values())
+        for name, (collection, entries) in all_parsed.items():
+            for entry in entries:
+                print(f"  [dry-run] {collection}/{entry.get('id', '?')}: {entry.get('title', '?')}")
+        print(f"\nDone. Would migrate {total} entries total.")
+        return 0
+
+    # Build delivery with extractor
+    from observatory_context.runtime import build_delivery
+
+    enrich = not args.no_enrich
+    try:
+        delivery = build_delivery(require_live=True, with_extractor=enrich)
+    except Exception as exc:
+        print(f"Error: OpenViking not reachable: {exc}", file=sys.stderr)
+        return 1
+
+    extractor = delivery.extractor
+    if enrich and not extractor:
+        print(
+            "Warning: No CBORG extractor configured. "
+            "Set CBORG_API_KEY for LLM enrichment, or use --no-enrich.",
+            file=sys.stderr,
         )
-        total += count
 
-    if not args.dry_run and delivery:
-        print("\nWaiting for OpenViking to process...")
+    # Stage everything locally first (batch pattern)
+    staging_dir = Path(tempfile.mkdtemp(prefix="ov_operational_"))
+    total = 0
+
+    try:
+        for name, (collection, entries) in all_parsed.items():
+            print(f"\n--- Staging {name} ({len(entries)} entries) ---", flush=True)
+            # Make a copy since _stage_entries pops 'id'
+            entries_copy = [dict(e) for e in entries]
+            count = _stage_entries(
+                staging_dir, collection, entries_copy,
+                extractor=extractor, enrich=enrich,
+            )
+            total += count
+
+            # Generate collection overview
+            if not args.no_overviews and extractor:
+                print(f"\n  Generating {name} overview...", flush=True)
+                if _stage_overview(staging_dir, collection, entries, extractor):
+                    print(f"  Overview staged.", flush=True)
+
+        # Count staged files
+        file_count = sum(1 for f in staging_dir.rglob("*") if f.is_file())
+        print(f"\nStaged {file_count} files in local tree")
+
+        # Batch upload to OpenViking
+        print("Uploading batch to OpenViking...", flush=True)
+        delivery.client.client.add_resource(
+            path=str(staging_dir),
+            to=_ROOT,
+            reason="Batch ingest operational knowledge (pitfalls, ideas, discoveries)",
+            wait=False,
+        )
+
+        print("Waiting for OpenViking to process...", flush=True)
         try:
             delivery.client.wait_until_processed(timeout=300)
             print("Processing complete.")
         except TimeoutError:
             print("Timed out waiting — resources were queued and may still be processing.")
 
-        # Generate collection overviews
-        if args.overviews:
-            print("\n--- Generating collection overviews ---")
-            for name, (collection, _, _) in collections.items():
-                try:
-                    uri = delivery.add_collection_overview(collection)
-                    if uri:
-                        print(f"  {name} overview: {uri}")
-                    else:
-                        print(f"  {name} overview: skipped (no extractor or no items)")
-                except Exception as exc:
-                    print(f"  {name} overview ERROR: {exc}", file=sys.stderr)
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
     print(f"\nDone. Migrated {total} entries total.")
     return 0
