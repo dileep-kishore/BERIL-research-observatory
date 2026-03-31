@@ -77,6 +77,30 @@ class OpenVikingObservatoryClient:
             kwargs["filter"] = filter
         return self.client.find(query, **kwargs)
 
+    def context_search(
+        self,
+        query: str,
+        target_uri: str | None = None,
+        session_id: str | None = None,
+        limit: int = 10,
+        score_threshold: float | None = None,
+        filter: dict | None = None,
+    ) -> list[dict[str, Any]]:
+        """Session-aware search using OpenViking's search() (not find()).
+
+        Uses intent analysis and session context for better relevance.
+        """
+        kwargs: dict[str, Any] = {"limit": limit}
+        if target_uri:
+            kwargs["target_uri"] = target_uri
+        if session_id:
+            kwargs["session_id"] = session_id
+        if score_threshold is not None:
+            kwargs["score_threshold"] = score_threshold
+        if filter is not None:
+            kwargs["filter"] = filter
+        return self.client.search(query, **kwargs)
+
     def read_resource(self, uri: str) -> str:
         return self.client.read(uri)
 

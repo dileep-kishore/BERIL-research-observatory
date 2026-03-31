@@ -183,6 +183,7 @@ class ContextDelivery:
         project: str | None = None,
         with_memory: bool = False,
         limit: int = 10,
+        session_id: str | None = None,
     ) -> SearchResults:
         """Semantic search across observatory resources.
 
@@ -202,6 +203,10 @@ class ContextDelivery:
             If True, search ALL and include memory results.
         limit:
             Maximum number of results.
+        session_id:
+            Optional session ID for context-aware search. When provided,
+            delegates to client.context_search() (OpenViking search())
+            instead of the stateless find().
         """
         target_uri = self._scope_uri(Scope.all if with_memory else scope)
         search_filter: dict[str, Any] | None = None
@@ -212,12 +217,21 @@ class ContextDelivery:
             if project:
                 search_filter["project"] = project
 
-        hits = self.client.search(
-            query=query,
-            target_uri=target_uri,
-            limit=limit,
-            filter=search_filter,
-        )
+        if session_id:
+            hits = self.client.context_search(
+                query=query,
+                target_uri=target_uri,
+                session_id=session_id,
+                limit=limit,
+                filter=search_filter,
+            )
+        else:
+            hits = self.client.search(
+                query=query,
+                target_uri=target_uri,
+                limit=limit,
+                filter=search_filter,
+            )
 
         items = []
         for hit in hits:

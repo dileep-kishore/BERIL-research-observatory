@@ -116,6 +116,7 @@ def _handle_search(args) -> int:
         project=args.project,
         with_memory=args.with_memory,
         limit=args.limit,
+        session_id=getattr(args, "session", None),
     )
     _print_search_results(results)
     return 0
@@ -425,6 +426,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["all", "resources", "memory", "graph"],
         default=None,
         help="Search scope (default: all)",
+    )
+    parser.add_argument(
+        "--session",
+        default=None,
+        help="Session ID for context-aware search (uses OpenViking search() instead of find())",
     )
 
     sub = parser.add_subparsers(dest="command")
