@@ -74,7 +74,9 @@ class ContextDelivery:
             return f"{_ROOT}/memories"
         if scope == Scope.graph:
             return build_knowledge_graph_uri()
-        # ALL and RESOURCES both start from root
+        if scope == Scope.resources:
+            return f"{_ROOT}/projects"
+        # ALL — search from root (includes projects, memory, graph)
         return _ROOT
 
     def _load_item(self, uri: str, tier: Tier) -> ContextItem:
