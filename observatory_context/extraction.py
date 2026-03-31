@@ -272,3 +272,168 @@ class CBORGExtractor:
 
         response.raise_for_status()  # raise on final failure
         return ""  # unreachable
+
+    # ------------------------------------------------------------------
+    # Operational knowledge enrichment
+    # ------------------------------------------------------------------
+
+    def enrich_operational(
+        self,
+        collection: str,
+        data: dict,
+    ) -> dict:
+        """Enrich a raw operational knowledge entry via LLM.
+
+        Takes a structured dict (from a skill or migration parser) and
+        returns ``{"markdown": ..., "metadata": ...}`` where *markdown*
+        is a clean, natural-language document suitable for OpenViking and
+        *metadata* is an enriched frontmatter dict with extracted tags,
+        entities, and category.
+
+        Parameters
+        ----------
+        collection:
+            One of ``"pitfall"``, ``"research_idea"``, ``"discovery"``.
+        data:
+            Raw entry dict.  Expected keys depend on collection type.
+
+        Returns
+        -------
+        dict
+            ``{"markdown": str, "metadata": dict}``
+        """
+        system = _ENRICH_SYSTEM_PROMPTS[collection]
+        user = json.dumps(data, indent=2, default=str)
+        raw = self._chat(system=system, user=user, max_tokens=2048)
+
+        # Parse the JSON response
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("LLM enrichment returned non-JSON, using raw")
+            result = {}
+
+        markdown = result.get("markdown", "")
+        metadata = result.get("metadata", {})
+
+        # Ensure required fields survive
+        if not markdown:
+            markdown = self._fallback_markdown(collection, data)
+        for key in ("title", "kind"):
+            if key not in metadata:
+                metadata[key] = data.get(key, data.get("title", ""))
+        metadata.setdefault("kind", collection)
+
+        return {"markdown": markdown, "metadata": metadata}
+
+    def generate_collection_overview(
+        self,
+        collection: str,
+        summaries: list[str],
+    ) -> str:
+        """Generate a collection-level overview from item summaries.
+
+        Parameters
+        ----------
+        collection:
+            Collection type name.
+        summaries:
+            List of one-line summaries of each item in the collection.
+
+        Returns
+        -------
+        str
+            Markdown overview suitable as ``_overview.md``.
+        """
+        system = (
+            f"You are a scientific knowledge organizer. Given a list of {collection} "
+            f"summaries from a microbial genomics research observatory, write a "
+            f"structured overview that groups them by theme/category, highlights "
+            f"the most important ones, and identifies patterns. "
+            f"Output clean markdown with headings and bullet points."
+        )
+        user = "\n".join(f"- {s}" for s in summaries)
+        return self._chat(system=system, user=user, max_tokens=2048)
+
+    def _fallback_markdown(self, collection: str, data: dict) -> str:
+        """Generate minimal markdown when LLM enrichment fails."""
+        title = data.get("title", "Untitled")
+        if collection == "pitfall":
+            problem = data.get("problem", "")
+            solution = data.get("solution", "")
+            return f"# {title}\n\n{problem}\n\n**Solution**: {solution}\n"
+        elif collection == "research_idea":
+            question = data.get("research_question", "")
+            return f"# {title}\n\n**Research Question**: {question}\n"
+        else:
+            desc = data.get("description", "")
+            return f"# {title}\n\n{desc}\n"
+
+
+_ENRICH_SYSTEM_PROMPTS = {
+    "pitfall": """\
+You are a technical writing assistant for a microbial genomics research observatory.
+Given a raw pitfall entry (JSON), produce a JSON response with two keys:
+
+"markdown": A clean, well-structured markdown document describing this pitfall.
+  - Start with a heading (# Title)
+  - Explain the problem clearly in natural language
+  - Include code examples (use fenced code blocks with language tags)
+  - End with a clear "**Solution**:" line
+  - Write for a data scientist who queries BERDL databases
+
+"metadata": A dict with these fields:
+  - "title": string
+  - "kind": "pitfall"
+  - "category": one of: "BERDL Query", "Data Sparsity", "Join & Foreign Key",
+    "Data Interpretation", "JupyterHub Environment", "Pandas & Type Conversion",
+    "Fitness Browser", "Genomes", "Pangenome", "Performance", "Spark", "Other"
+  - "tags": list of 2-5 lowercase keyword tags
+  - "project_ids": list of project IDs mentioned (empty list if none)
+  - "entities": list of related entity references like "organisms/ecoli" or "methods/spark-sql"
+
+Return ONLY valid JSON with no markdown fences or commentary.""",
+
+    "research_idea": """\
+You are a scientific writing assistant for a microbial genomics research observatory.
+Given a raw research idea entry (JSON), produce a JSON response with two keys:
+
+"markdown": A clean, well-structured markdown document describing this research idea.
+  - Start with a heading (# Title)
+  - Include sections: Research Question, Hypotheses, Approach, Expected Impact
+  - If status/priority/effort are provided, include them as a metadata block at the top
+  - Write clearly for a computational biologist
+
+"metadata": A dict with these fields:
+  - "title": string
+  - "kind": "research_idea"
+  - "status": "PROPOSED" | "IN_PROGRESS" | "COMPLETED" (preserve from input)
+  - "priority": "HIGH" | "MEDIUM" | "LOW" (preserve from input)
+  - "effort": string estimate (preserve from input)
+  - "tags": list of 2-5 lowercase keyword tags
+  - "project_ids": list of related project IDs
+  - "entities": list of related entity references
+
+Return ONLY valid JSON with no markdown fences or commentary.""",
+
+    "discovery": """\
+You are a scientific writing assistant for a microbial genomics research observatory.
+Given a raw discovery entry (JSON), produce a JSON response with two keys:
+
+"markdown": A clean, well-structured markdown document describing this discovery.
+  - Start with a heading (# Title)
+  - Present the finding clearly with specific numbers and statistics
+  - Explain the biological significance
+  - Note any implications or follow-up questions
+  - Write for a microbiologist or computational biologist
+
+"metadata": A dict with these fields:
+  - "title": string
+  - "kind": "discovery"
+  - "tags": list of 2-5 lowercase keyword tags
+  - "project_ids": list of project IDs this discovery came from
+  - "entities": list of related entity references like "organisms/ecoli"
+  - "date": date string (preserve from input)
+
+Return ONLY valid JSON with no markdown fences or commentary.""",
+}

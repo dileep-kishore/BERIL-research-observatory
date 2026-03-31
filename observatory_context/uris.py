@@ -120,9 +120,14 @@ def build_operational_collection_uri(collection: str) -> str:
 
 
 def build_operational_item_uri(collection: str, item_id: str) -> str:
-    """URI for a specific item in an operational knowledge collection."""
+    """URI for a specific item in an operational knowledge collection.
+
+    Returns a ``.md`` file URI, e.g.
+    ``viking://resources/observatory/pitfalls/rest-api-reliability.md``.
+    """
     dir_name = _OPERATIONAL_COLLECTIONS[collection]
-    path = PurePosixPath(dir_name, _normalize_segment(item_id))
+    safe_id = _normalize_segment(item_id)
+    path = PurePosixPath(dir_name, f"{safe_id}.md")
     return f"{_ROOT}/{path.as_posix()}"
 
 

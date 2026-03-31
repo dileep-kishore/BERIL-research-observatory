@@ -80,7 +80,7 @@ Wait for approval. If the user wants changes, revise and re-present.
 
 ### Step 6: Write to OpenViking
 
-On approval, create a slug from the title and add the pitfall:
+On approval, create a slug from the title and add the pitfall. Provide the raw structured data — the CBORG LLM will automatically enrich it into clean markdown with proper tags, entity references, and categorization:
 
 ```bash
 uv run scripts/query_knowledge_unified.py add-pitfall "<slug>" --json '{
@@ -93,6 +93,12 @@ uv run scripts/query_knowledge_unified.py add-pitfall "<slug>" --json '{
 }'
 ```
 
+The system will:
+1. Rewrite your entry as clean, searchable markdown via the CBORG LLM
+2. Auto-extract tags, related entities (organisms, methods, databases), and refine the category
+3. Upload as a single markdown resource with proper frontmatter
+4. Cross-link to related projects in the knowledge graph
+
 After writing, confirm: "Pitfall added to the knowledge base."
 
 Then **resume the original task** — pitfall capture should not derail the user's workflow.
@@ -103,3 +109,4 @@ Then **resume the original task** — pitfall capture should not derail the user
 - **One pitfall at a time.** If multiple issues arise, handle each separately to avoid overwhelming the user.
 - **Be specific.** Vague entries like "queries can be slow" are not useful. Include the exact table, the exact error, the exact fix.
 - **Include the project tag** when the pitfall was discovered in the context of a specific project. This helps with traceability.
+- **LLM enrichment is automatic.** You don't need to write perfect markdown — provide the raw facts and the enrichment pipeline will format them properly.

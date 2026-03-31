@@ -480,16 +480,6 @@ class ContextDelivery:
     # Operational knowledge (pitfalls, research ideas, discoveries)
     # ------------------------------------------------------------------
 
-    _OPERATIONAL_FILE_NAMES = {
-        "pitfall": "pitfall.yaml",
-        "research_idea": "idea.yaml",
-        "discovery": "discovery.yaml",
-    }
-
-    def _operational_item_uri(self, collection: str, item_id: str) -> str:
-        file_name = self._OPERATIONAL_FILE_NAMES[collection]
-        return f"{build_operational_item_uri(collection, item_id)}/{file_name}"
-
     def list_operational(
         self,
         collection: str,
@@ -534,42 +524,9 @@ class ContextDelivery:
                 except Exception:
                     logger.warning("Failed to load search hit %s", hit, exc_info=True)
         else:
-            # Browse the collection directory, then resolve each item's
-            # actual content file (OpenViking nests uploads under a
-            # temp child, so we list each item dir to find the leaf).
+            # Each item is a single .md file in the collection directory.
             uri = build_operational_collection_uri(collection)
-            file_name = self._OPERATIONAL_FILE_NAMES[collection]
-            dir_entries = self.client.list_resources(uri)
-            items = []
-            for entry in dir_entries:
-                entry_uri = entry.get("uri", "")
-                file_uri = f"{entry_uri}/{file_name}"
-                try:
-                    # The file_uri is itself a directory; find the
-                    # actual content leaf inside it.
-                    children = self.client.list_resources(file_uri)
-                    if children:
-                        leaf_uri = children[0]["uri"]
-                        item = self._load_item(leaf_uri, tier)
-                        items.append(item)
-                except Exception:
-                    logger.debug("Could not load %s", file_uri)
-
-        # Enrich metadata from YAML body for filtering.
-        # OpenViking stores operational items as YAML content, but the
-        # parsed frontmatter metadata may be sparse.  Parse the body
-        # to ensure fields like status/category are available.
-        if status or category:
-            for item in items:
-                if not item.metadata.get("status") and not item.metadata.get("category"):
-                    try:
-                        parsed = yaml.safe_load(item.content)
-                        if isinstance(parsed, dict):
-                            for key in ("status", "category", "priority"):
-                                if key in parsed and key not in item.metadata:
-                                    item.metadata[key] = parsed[key]
-                    except Exception:
-                        pass
+            items = self.browse(uri, tier=tier)
 
         if status:
             items = [i for i in items if i.metadata.get("status") == status]
@@ -583,9 +540,15 @@ class ContextDelivery:
         item_id: str,
         data: dict[str, Any],
         *,
+        enrich: bool = True,
         wait: bool = True,
     ) -> str:
         """Add an item to an operational knowledge collection.
+
+        If an extractor is available and *enrich* is True, the raw data
+        is sent through the LLM to produce clean markdown with enriched
+        metadata (tags, entities, category).  Otherwise a fallback
+        markdown document is generated directly.
 
         Parameters
         ----------
@@ -594,8 +557,9 @@ class ContextDelivery:
         item_id:
             Slug identifier for the item.
         data:
-            Item data dict. Must include "title". Other fields depend on
-            the collection type.
+            Raw item data dict.  Must include "title".
+        enrich:
+            Whether to run LLM enrichment via CBORG.
         wait:
             Whether to block until processed.
 
@@ -604,28 +568,49 @@ class ContextDelivery:
         str
             URI of the created resource.
         """
-        uri = self._operational_item_uri(collection, item_id)
+        uri = build_operational_item_uri(collection, item_id)
         today = date.today().isoformat()
+        data.setdefault("date", today)
 
-        metadata: dict[str, Any] = {
-            "title": data.get("title", item_id),
-            "kind": collection,
-        }
-        for key in ("tags", "project_ids", "category", "status", "priority", "effort"):
-            if key in data:
-                metadata[key] = data[key]
-        if "date" not in data:
-            data["date"] = today
+        if enrich and self.extractor:
+            try:
+                result = self.extractor.enrich_operational(collection, data)
+                markdown = result["markdown"]
+                metadata = result["metadata"]
+            except Exception:
+                logger.warning("LLM enrichment failed for %s/%s, using fallback", collection, item_id)
+                markdown = self.extractor._fallback_markdown(collection, data)
+                metadata = self._basic_metadata(collection, data)
+        else:
+            markdown = self._fallback_markdown(collection, data)
+            metadata = self._basic_metadata(collection, data)
 
-        content = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+        # Ensure core metadata fields
+        metadata.setdefault("title", data.get("title", item_id))
+        metadata.setdefault("kind", collection)
+        metadata.setdefault("date", data.get("date", today))
 
-        self.ingest_resource(
-            uri,
-            content,
-            metadata=metadata,
-            generate_tiers=True,
-            wait=wait,
-        )
+        self.ingest_resource(uri, markdown, metadata=metadata, generate_tiers=False, wait=wait)
+
+        # Cross-link to related projects
+        project_ids = metadata.get("project_ids") or data.get("project_ids") or []
+        if project_ids:
+            from observatory_context.uris import build_project_workspace_uri
+
+            project_uris = []
+            for pid in project_ids:
+                try:
+                    p_uri = build_project_workspace_uri(pid)
+                    if self.client.resource_exists(p_uri):
+                        project_uris.append(p_uri)
+                except Exception:
+                    pass
+            if project_uris:
+                try:
+                    self.client.link_resources(uri, project_uris, reason=f"{collection} cross-ref")
+                except Exception:
+                    logger.debug("Failed to link %s to projects", uri)
+
         return uri
 
     def update_operational(
@@ -638,7 +623,8 @@ class ContextDelivery:
     ) -> str:
         """Update fields on an existing operational knowledge item.
 
-        Reads the current content, merges updates, and re-writes.
+        Reads the current markdown, updates frontmatter metadata, and
+        optionally re-enriches the content.
 
         Parameters
         ----------
@@ -647,7 +633,7 @@ class ContextDelivery:
         item_id:
             Slug identifier for the item.
         updates:
-            Dict of fields to update (merged into existing data).
+            Dict of fields to update (merged into metadata).
         wait:
             Whether to block until processed.
 
@@ -656,19 +642,87 @@ class ContextDelivery:
         str
             URI of the updated resource.
         """
-        uri = self._operational_item_uri(collection, item_id)
+        uri = build_operational_item_uri(collection, item_id)
 
         # Read existing content
         raw = self.client.read_resource(uri)
-        _meta, body = split_frontmatter(raw, {})
-        existing = yaml.safe_load(body) if body.strip() else {}
-        if not isinstance(existing, dict):
-            existing = {}
+        existing_meta, body = split_frontmatter(raw, {})
 
-        # Merge updates
-        existing.update(updates)
+        # Merge updates into metadata
+        existing_meta.update(updates)
 
-        return self.add_operational(collection, item_id, existing, wait=wait)
+        # Re-write with updated metadata
+        self.ingest_resource(uri, body, metadata=existing_meta, generate_tiers=False, wait=wait)
+        return uri
+
+    def add_collection_overview(
+        self,
+        collection: str,
+        *,
+        wait: bool = True,
+    ) -> str | None:
+        """Generate and upload a collection-level overview using LLM.
+
+        Reads all items in the collection, extracts titles, and asks the
+        LLM to produce a grouped overview document.
+
+        Returns
+        -------
+        str or None
+            URI of the overview resource, or None if generation fails.
+        """
+        if not self.extractor:
+            return None
+
+        items = self.list_operational(collection, tier=Tier.L2)
+        if not items:
+            return None
+
+        summaries = [f"{item.title}: {item.content[:150]}" for item in items]
+
+        try:
+            overview_md = self.extractor.generate_collection_overview(collection, summaries)
+        except Exception:
+            logger.warning("Failed to generate overview for %s", collection)
+            return None
+
+        overview_uri = f"{build_operational_collection_uri(collection)}/_overview.md"
+        meta = {"title": f"{collection.replace('_', ' ').title()} Overview", "kind": "overview"}
+        self.ingest_resource(overview_uri, overview_md, metadata=meta, generate_tiers=False, wait=wait)
+        return overview_uri
+
+    @staticmethod
+    def _basic_metadata(collection: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Build basic metadata dict from raw data without LLM."""
+        metadata: dict[str, Any] = {
+            "title": data.get("title", ""),
+            "kind": collection,
+        }
+        for key in ("tags", "project_ids", "category", "status", "priority", "effort", "date"):
+            if key in data:
+                metadata[key] = data[key]
+        return metadata
+
+    @staticmethod
+    def _fallback_markdown(collection: str, data: dict[str, Any]) -> str:
+        """Generate minimal markdown when no LLM extractor is available."""
+        title = data.get("title", "Untitled")
+        if collection == "pitfall":
+            problem = data.get("problem", "")
+            solution = data.get("solution", "")
+            return f"# {title}\n\n{problem}\n\n**Solution**: {solution}\n"
+        elif collection == "research_idea":
+            question = data.get("research_question", "")
+            status = data.get("status", "PROPOSED")
+            priority = data.get("priority", "MEDIUM")
+            return (
+                f"# {title}\n\n"
+                f"**Status**: {status} | **Priority**: {priority}\n\n"
+                f"**Research Question**: {question}\n"
+            )
+        else:
+            desc = data.get("description", "")
+            return f"# {title}\n\n{desc}\n"
 
     # ------------------------------------------------------------------
     # Ingest operations

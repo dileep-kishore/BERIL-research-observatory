@@ -27,12 +27,12 @@ from observatory_context.uris import (
 DELIVERY: ContextDelivery
 
 
-def _build_delivery() -> ContextDelivery:
+def _build_delivery(with_extractor: bool = False) -> ContextDelivery:
     """Build a ContextDelivery instance with a live OpenViking connection or exit."""
     from observatory_context.runtime import build_delivery
 
     try:
-        delivery = build_delivery(require_live=True)
+        delivery = build_delivery(require_live=True, with_extractor=with_extractor)
     except Exception as exc:
         import sys
 
@@ -564,7 +564,9 @@ def main(argv: list[str] | None = None) -> int:
             parser.print_help()
             return 1
 
-    DELIVERY = _build_delivery()
+    # Enable CBORG extractor for write commands that benefit from LLM enrichment
+    _WRITE_COMMANDS = {"add-pitfall", "add-idea", "add-discovery", "remember", "ingest-entity"}
+    DELIVERY = _build_delivery(with_extractor=args.command in _WRITE_COMMANDS)
 
     handler = _HANDLERS.get(args.command)
     if handler is None:

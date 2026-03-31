@@ -223,7 +223,7 @@ After presenting the recommendation, ask:
 
 If yes:
 
-1. **Add to OpenViking**: Create the research idea in the knowledge base:
+1. **Add to OpenViking**: Create the research idea in the knowledge base. Provide the raw structured data — the CBORG LLM will automatically enrich it into clean markdown with proper tags, entity references, and cross-links:
 
 ```bash
 uv run scripts/query_knowledge_unified.py add-idea "<slug>" --json '{

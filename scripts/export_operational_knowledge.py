@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from observatory_context._text import split_frontmatter
 from observatory_context.models import Tier
 
 
@@ -68,22 +69,17 @@ def main(argv: list[str] | None = None) -> int:
         coll_dir.mkdir(parents=True, exist_ok=True)
 
         for item in items:
-            # Parse YAML body from content
-            content = item.content
-            try:
-                data = yaml.safe_load(content)
-            except yaml.YAMLError:
-                data = {"title": item.title, "content": content}
+            # Build export with metadata + content
+            metadata, body = split_frontmatter(item.content, {})
+            # Merge item-level metadata
+            export_meta = {**item.metadata, **metadata}
 
-            if not isinstance(data, dict):
-                data = {"title": item.title, "content": str(data)}
-
-            # Derive filename from URI
-            slug = item.uri.rstrip("/").rsplit("/", 2)[-2]  # parent dir is the slug
+            slug = item.uri.rstrip("/").rsplit("/", 1)[-1].removesuffix(".md")
             out_path = coll_dir / f"{slug}.yaml"
 
+            export = {"metadata": export_meta, "content": body.strip()}
             out_path.write_text(
-                yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+                yaml.safe_dump(export, sort_keys=False, allow_unicode=True),
                 encoding="utf-8",
             )
             print(f"  {out_path}")
