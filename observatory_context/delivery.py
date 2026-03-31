@@ -524,9 +524,45 @@ class ContextDelivery:
                 except Exception:
                     logger.warning("Failed to load search hit %s", hit, exc_info=True)
         else:
-            # Each item is a single .md file in the collection directory.
+            # Each item is a .md file in the collection directory.
+            # OpenViking wraps uploads in a dir, so we resolve to the
+            # leaf content file inside each entry.
             uri = build_operational_collection_uri(collection)
-            items = self.browse(uri, tier=tier)
+            dir_entries = self.client.list_resources(uri)
+            items = []
+            for entry in dir_entries:
+                entry_uri = entry.get("uri", "")
+                # Skip overview files in listing
+                if entry.get("name", "").startswith("_"):
+                    continue
+                try:
+                    children = self.client.list_resources(entry_uri)
+                    # Filter out tier files, take the content leaf
+                    leaves = [
+                        c for c in children
+                        if not c.get("name", "").startswith(".")
+                    ]
+                    if leaves:
+                        item = self._load_item(leaves[0]["uri"], tier)
+                        items.append(item)
+                except Exception:
+                    logger.debug("Could not load %s", entry_uri)
+
+        # Enrich metadata from content for filtering.  The LLM-generated
+        # markdown embeds status/category in the body text; extract them
+        # so filters work even when frontmatter metadata is sparse.
+        if status or category:
+            import re as _re
+
+            for item in items:
+                if not item.metadata.get("status"):
+                    m = _re.search(r"\*\*Status:?\*\*:?\s*(\w+)", item.content)
+                    if m:
+                        item.metadata["status"] = m.group(1).upper()
+                if not item.metadata.get("category"):
+                    m = _re.search(r"\*\*Category:?\*\*:?\s*(.+?)(?:\n|$)", item.content)
+                    if m:
+                        item.metadata["category"] = m.group(1).strip()
 
         if status:
             items = [i for i in items if i.metadata.get("status") == status]
