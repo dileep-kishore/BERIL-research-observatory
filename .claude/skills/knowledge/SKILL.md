@@ -1,6 +1,6 @@
 ---
 name: knowledge
-description: "Search the research observatory knowledge base through OpenViking first — projects, findings, figures, reusable data, entities, hypotheses, and cross-project connections. Use when the user wants to find projects by topic, search for figures, locate reusable data, explore the knowledge graph, get a landscape overview, or asks questions like 'what do we know about X', 'have we studied Y', 'which projects involve Z', or 'show me findings on W'."
+description: "Search the research observatory knowledge base through OpenViking — projects, findings, figures, reusable data, entities, hypotheses, pitfalls, discoveries, research ideas, and cross-project connections. Use when the user wants to find projects by topic, search for figures, locate reusable data, explore the knowledge graph, list pitfalls or lessons learned, review discoveries, check research ideas, get a landscape overview, or asks questions like 'what do we know about X', 'what pitfalls have we seen', 'show me discoveries', 'what research ideas exist', 'have we studied Y', 'which projects involve Z', or 'show me findings on W'."
 allowed-tools: Read, Bash, Grep
 user-invocable: true
 ---
@@ -30,6 +30,9 @@ Search the observatory's knowledge via OpenViking. OpenViking must be running fo
 /knowledge recall <query>        — search memories
 /knowledge remember <store> <title> <body> — write a memory entry
 /knowledge ingest-entity <type> <id> --profile-json <json> — create an entity
+/knowledge pitfalls [topic]                  — list/search pitfalls
+/knowledge discoveries [topic]               — list/search discoveries
+/knowledge ideas [--status STATUS]           — list/search research ideas
 ```
 
 ### Optional Flags
@@ -47,7 +50,7 @@ Example with flags before subcommand:
 uv run scripts/query_knowledge_unified.py --tier L1 browse viking://resources/observatory/projects/
 ```
 
-Subcommands not listed above (`project`, `landscape`, `gaps`, `timeline`, `hypotheses`, `related`, `grep`, `glob`, `recall`, `remember`, `ingest-entity`) ignore these flags.
+Subcommands not listed above (`project`, `landscape`, `gaps`, `timeline`, `hypotheses`, `related`, `grep`, `glob`, `recall`, `remember`, `ingest-entity`, `pitfalls`, `discoveries`, `ideas`) ignore these flags.
 
 ## Prerequisites
 
@@ -87,6 +90,12 @@ Map subcommands directly:
 - `/knowledge recall <query>` → `recall "<query>"`
 - `/knowledge remember <store> <title> <body>` → `remember <store> <title> <body>`
 - `/knowledge ingest-entity <type> <id> --profile-json <json>` → `ingest-entity <type> <id> --profile-json <json>`
+- `/knowledge pitfalls` → `pitfalls`
+- `/knowledge pitfalls <topic>` → `pitfalls "<topic>"`
+- `/knowledge discoveries` → `discoveries`
+- `/knowledge discoveries <topic>` → `discoveries "<topic>"`
+- `/knowledge ideas` → `ideas`
+- `/knowledge ideas --status <status>` → `ideas --status <status>`
 
 A bare argument (no subcommand) is treated as `search` for backward compatibility:
 ```bash
@@ -276,10 +285,37 @@ Requires a live OpenViking server. If the server is not running, tell the user:
 
 Output: list of matching resource URIs with total count.
 
+### Subcommand: `/knowledge pitfalls [topic]`
+
+**List or search pitfalls in the knowledge base.**
+Run: `uv run scripts/query_knowledge_unified.py pitfalls [topic]`
+
+Optional positional argument filters by keyword. Supports `--category` to filter by pitfall category.
+
+Output: numbered list of pitfalls with title, category, problem description, and solution.
+
+### Subcommand: `/knowledge discoveries [topic]`
+
+**List or search discoveries in the knowledge base.**
+Run: `uv run scripts/query_knowledge_unified.py discoveries [topic]`
+
+Optional positional argument filters by keyword.
+
+Output: numbered list of discoveries with title, category, description, and evidence.
+
+### Subcommand: `/knowledge ideas [--status STATUS]`
+
+**List or search research ideas in the knowledge base.**
+Run: `uv run scripts/query_knowledge_unified.py ideas [--status STATUS]`
+
+Optional `--status` filter: `PROPOSED`, `IN_PROGRESS`, `COMPLETED`.
+
+Output: numbered list of research ideas with title, status, priority, and research question.
+
 ## Integration
 
 - **Query backend**: `scripts/query_knowledge_unified.py` (requires OpenViking)
 - **Data source**: OpenViking (single source of truth for all observatory knowledge)
 - **Re-ingested by**: `/build-registry` (re-ingests all resources into OpenViking)
 - **Consumed by**: agents and users exploring the research landscape
-- **Related skills**: `/suggest-research` (landscape analysis), `/build-registry` (re-ingest), `/synthesize` (updates knowledge after project completion)
+- **Related skills**: `/suggest-research` (landscape analysis + idea writing), `/build-registry` (re-ingest), `/synthesize` (updates knowledge after project completion), `/pitfall-capture` (pitfall writing), discovery-capture (discovery writing)
