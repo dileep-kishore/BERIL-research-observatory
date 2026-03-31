@@ -122,7 +122,7 @@ The typical workflow looks like this:
 Your notebooks execute on the same Spark cluster you logged into, so queries run against the full lakehouse without any extra setup.
 
 For query guidance, see:
-- [docs/pitfalls.md](pitfalls.md) — common SQL gotchas and how to avoid them
+- OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) — common SQL gotchas and how to avoid them
 - [docs/performance.md](performance.md) — strategies for querying billion-row tables efficiently
 
 ## Step 7: Save your work as you go
@@ -170,6 +170,6 @@ You can keep working on the project after submitting — submission is not a one
 - **BERDL JupyterHub**: [hub.berdl.kbase.us](https://hub.berdl.kbase.us)
 - **CBORG (LBL users)**: [cborg.lbl.gov](https://cborg.lbl.gov/tools_claudecode/)
 - **Collections overview**: [docs/collections.md](collections.md)
-- **Query pitfalls**: [docs/pitfalls.md](pitfalls.md)
+- **Query pitfalls**: OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`)
 - **Performance tips**: [docs/performance.md](performance.md)
 - **Schema documentation**: [docs/schemas/](schemas/)

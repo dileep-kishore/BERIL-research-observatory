@@ -191,7 +191,7 @@ All databases are accessible via:
 
 For query patterns and performance guidance, see:
 - [Performance Guide](performance.md)
-- [Common Pitfalls](pitfalls.md)
+- OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`)
 - Individual schema docs linked above
 
 ---

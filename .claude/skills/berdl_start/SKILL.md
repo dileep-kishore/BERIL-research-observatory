@@ -35,11 +35,10 @@ projects/           # Science projects (each has README.md + notebooks/ + data/)
 docs/               # Shared knowledge base
   collections.md    # Full database inventory
   schemas/          # Per-collection schema docs
-  pitfalls.md       # SQL gotchas, data sparsity, common errors
   performance.md    # Query strategies for large tables
-  research_ideas.md # Future research directions
   overview.md       # Scientific context and data generation workflow
-  discoveries.md    # Running log of insights
+  # pitfalls, research ideas, and discoveries are stored in OpenViking
+  # query via: uv run scripts/query_knowledge_unified.py pitfalls|ideas|discoveries
 .claude/skills/     # Agent skills
 data/               # Shared data extracts reusable across projects
 ```
@@ -161,8 +160,8 @@ When the user wants to start a new research project, the agent drives the entire
 1. Read `PROJECT.md` — understand dual goals (science + knowledge capture), project structure requirements, reproducibility standards, JupyterHub workflow, Spark notebook patterns
 2. Read `docs/overview.md` — understand the data architecture, key tables, data generation workflow, known limitations
 3. Read `docs/collections.md` — full database inventory (35 databases, 9 tenants), what data is actually available
-4. Read `docs/pitfalls.md` and `docs/performance.md` — **critical: read these before designing any queries or analysis**
-5. Read `docs/research_ideas.md` — check for existing ideas, avoid duplicating work
+4. Search pitfalls in OpenViking: `uv run scripts/query_knowledge_unified.py pitfalls` and read `docs/performance.md` — **critical: read these before designing any queries or analysis**
+5. Query research ideas from OpenViking: `uv run scripts/query_knowledge_unified.py ideas` — check for existing ideas, avoid duplicating work
 
 **Additional setup (Phase 1.5 should have already checked KBASE_AUTH_TOKEN and proxy):**
 6. Check `gh auth status` — needed for creating branches, PRs, and pushing code. If not authenticated, prompt the user to run `gh auth login`
@@ -191,7 +190,7 @@ When the user wants to start a new research project, the agent drives the entire
 
     Use the Agent tool with `subagent_type="general-purpose"` and provide the system prompt from `.claude/reviewer/PLAN_REVIEW_PROMPT.md` inline in the prompt. The agent should:
     - Read `projects/{project_id}/RESEARCH_PLAN.md` and `README.md`
-    - Read `docs/pitfalls.md`, `docs/performance.md`, `docs/collections.md`, and `PROJECT.md`
+    - Search pitfalls in OpenViking: `uv run scripts/query_knowledge_unified.py pitfalls`; also read `docs/performance.md`, `docs/collections.md`, and `PROJECT.md`
     - Check `docs/schemas/` for any tables referenced in the plan
     - Read README.md files of related existing projects to check for overlap
     - Return a concise list of suggestions organized by: Feasibility, Overlap, Pitfall Awareness, Statistical Rigor, Convention Compliance, and Missing Considerations
@@ -206,7 +205,7 @@ When the user wants to start a new research project, the agent drives the entire
 23. **Run notebooks** — execute cells, inspect outputs, iterate
 24. As new information emerges, update `RESEARCH_PLAN.md` with a revision tag: `- **v2** ({date}): {what changed and why}`
 25. **Check in code frequently** — commit after each major milestone (plan written, notebooks created, data extracted, analysis complete)
-26. Re-read `docs/pitfalls.md` when something doesn't work as expected
+26. search pitfalls in OpenViking: `uv run scripts/query_knowledge_unified.py pitfalls "<issue description>"` when something doesn't work as expected
 
 #### Checkpoint: Results Review
 
@@ -232,10 +231,10 @@ After notebooks are executed and committed, **pause and present the key results 
 
 #### Throughout the Entire Workflow:
 - **Check in code often** — don't let work accumulate uncommitted
-- **Update `docs/discoveries.md`** when you find something interesting (tag with `[project_id]`)
-- **Update `docs/pitfalls.md`** when you hit a gotcha (follow pitfall-capture protocol from `.claude/skills/pitfall-capture/SKILL.md`)
+- **Add discoveries to OpenViking: `uv run scripts/query_knowledge_unified.py add-discovery "<slug>" --json '{"title": "...", "project_ids": ["..."], "description": "..."}'`** when you find something interesting
+- **Document pitfalls** when you hit a gotcha (follow pitfall-capture protocol from `.claude/skills/pitfall-capture/SKILL.md`)
 - **Update `docs/performance.md`** when you learn a query optimization
-- **Re-read `docs/pitfalls.md`** when debugging failures — the answer may already be documented
+- **search pitfalls in OpenViking: `uv run scripts/query_knowledge_unified.py pitfalls "<issue description>"`** when debugging failures — the answer may already be documented
 - **Re-read `docs/performance.md`** when queries are slow — check for existing optimization patterns
 - **Follow `PROJECT.md` standards** — notebooks with saved outputs, figures as standalone PNGs, requirements.txt, Reproduction section in README
 
@@ -243,7 +242,7 @@ After notebooks are executed and committed, **pause and present the key results 
 
 Read these files:
 - `docs/collections.md` — full database inventory
-- `docs/pitfalls.md` — critical gotchas before querying
+- OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) — critical gotchas before querying
 
 Then:
 - Summarize what databases are available and their scale
@@ -299,19 +298,19 @@ Then:
 - Explain the documentation workflow (tag discoveries, update pitfalls)
 - Mention the UI can be browsed at the BERDL JupyterHub
 - List the available skills and what each does
-- Point to `docs/research_ideas.md` for future directions
+- Point to OpenViking research ideas (`uv run scripts/query_knowledge_unified.py ideas`) for future directions
 
 ---
 
 ## Key Principles (for the agent)
 
-1. **Read the docs first** — `PROJECT.md`, `docs/overview.md`, `docs/collections.md`, `docs/pitfalls.md`, and `docs/performance.md` before designing anything. Check existing `projects/` to avoid duplicating work.
+1. **Read the docs first** — `PROJECT.md`, `docs/overview.md`, `docs/collections.md`, OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`), and `docs/performance.md` before designing anything. Check existing `projects/` to avoid duplicating work.
 2. **Notebooks are the audit trail** — numbered sequentially (01, 02, 03...), each self-contained with a clear purpose. Commit with saved outputs per `PROJECT.md` reproducibility standards.
 3. **Commit early and often** — after plan, after notebooks, after data extraction, after analysis, after synthesis.
 4. **Branch by default** — create a `projects/{project_id}` branch when starting a new project. Extended work on main causes merge difficulties and risks conflicting with other contributors. Tell the user what branch you're creating; if they explicitly prefer main, respect that.
 5. **Update the plan** — when the analysis reveals something that changes the approach, update RESEARCH_PLAN.md with a dated revision tag explaining what changed and why.
 6. **Don't stop and wait** — drive the process forward, checking in with the user at decision points rather than stopping after each step.
-7. **Document as you go** — discoveries go in `docs/discoveries.md`, pitfalls in `docs/pitfalls.md`, performance tips in `docs/performance.md` — captured in real-time, tagged with `[project_id]`.
+7. **Document as you go** — discoveries go in OpenViking (`query_knowledge_unified.py add-discovery`), pitfalls via the pitfall-capture protocol, performance tips in `docs/performance.md` — captured in real-time, tagged with `[project_id]`.
 8. **Use Spark patterns from PROJECT.md** — `get_spark_session()`, PySpark-first, `.toPandas()` only for final small results.
 
 ---
@@ -323,7 +322,7 @@ Regardless of path chosen, surface these early:
 1. **Species IDs contain `--`** — This is fine inside quoted strings in SQL. Use exact equality (`WHERE id = 's__Escherichia_coli--RS_GCF_000005845.2'`), not LIKE patterns.
 2. **Large tables need filters** — Never full-scan `gene` (1B rows) or `genome_ani` (420M rows). Always filter by species or genome ID.
 3. **AlphaEarth embeddings cover only 28%** of genomes (83K/293K) — check coverage before relying on them.
-4. **Match Spark import to environment** — On JupyterHub notebooks: `spark = get_spark_session()` (no import). On JupyterHub CLI/scripts: `from berdl_notebook_utils.setup_spark_session import get_spark_session`. Locally: `from get_spark_session import get_spark_session` (requires `.venv-berdl` + proxy chain). See `docs/pitfalls.md` for details.
+4. **Match Spark import to environment** — On JupyterHub notebooks: `spark = get_spark_session()` (no import). On JupyterHub CLI/scripts: `from berdl_notebook_utils.setup_spark_session import get_spark_session`. Locally: `from get_spark_session import get_spark_session` (requires `.venv-berdl` + proxy chain). Search pitfalls in OpenViking: `uv run scripts/query_knowledge_unified.py pitfalls "spark import"` for details.
 5. **Auth token** — stored in `.env` as `KBASE_AUTH_TOKEN` (not `KB_AUTH_TOKEN`).
 6. **String-typed numeric columns** — Many databases store numbers as strings. Always CAST before comparisons.
 7. **Gene clusters are species-specific** — Cannot compare cluster IDs across species. Use COG/KEGG/PFAM for cross-species comparisons.

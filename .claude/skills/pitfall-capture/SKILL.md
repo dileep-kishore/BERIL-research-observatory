@@ -23,9 +23,13 @@ Activate this protocol when any of the following occur:
 
 ### Step 1: Check for Duplicates
 
-Read `docs/pitfalls.md` and determine whether this issue is already documented.
+Search OpenViking for existing pitfalls related to this issue:
 
-- **If already documented:** Tell the user: "This is a known pitfall — see the '[Section Name]' section in `docs/pitfalls.md`." Quote or summarize the relevant guidance so the user can apply it immediately. **Stop here** — do not proceed to Step 2.
+```bash
+uv run scripts/query_knowledge_unified.py pitfalls "<brief description of issue>"
+```
+
+- **If already documented:** Tell the user: "This is a known pitfall." Quote or summarize the relevant guidance so the user can apply it immediately. **Stop here** — do not proceed to Step 2.
 - **If not documented:** Proceed to Step 2.
 
 ### Step 2: Ask the User
@@ -41,40 +45,21 @@ Wait for the user's response.
 
 ### Step 3: Draft the Entry
 
-Write a draft pitfall entry following the format conventions in `docs/pitfalls.md`. The entry must include:
+Write a draft pitfall entry. The entry must include:
 
-1. **A descriptive heading** (### level)
-2. **A project tag** in bold if the issue arose in a specific project context, e.g., `**[project_name]**`
-3. **Brief explanation** of what the issue is and why it's a problem
-4. **Code example** showing the wrong approach and the correct approach (SQL, Python, or shell as appropriate)
-5. **Solution line** with actionable guidance
+1. **A descriptive title**
+2. **A category** — one of the existing categories (see below) or propose a new one
+3. **A project tag** if the issue arose in a specific project context
+4. **Brief explanation** of what the issue is and why it's a problem
+5. **Code example** showing the wrong approach and the correct approach (SQL, Python, or shell as appropriate)
+6. **Solution line** with actionable guidance
 
-Use this template:
+### Step 4: Determine Category
 
-```markdown
-### [Descriptive Title]
-
-**[project_tag]** Explanation of the issue — what goes wrong and why.
-
-```sql
--- WRONG: Description of the incorrect approach
-<incorrect code>
-
--- CORRECT: Description of the correct approach
-<correct code>
-```
-
-**Solution**: One-sentence actionable fix.
-```
-
-Adapt the template as needed — not every pitfall involves SQL. Some may be about Python, environment setup, or data interpretation. The code block language and content should match the actual issue.
-
-### Step 4: Determine Placement
-
-Identify which section of `docs/pitfalls.md` the entry belongs under. The current sections are:
+Assign one of these categories:
 
 - **General BERDL Pitfalls** — REST API, auth, schema introspection, string-typed columns
-- **Pangenome (`kbase_ke_pangenome`) Pitfalls** — SQL syntax, ID formats, species-specific issues
+- **Pangenome Pitfalls** — SQL syntax, ID formats, species-specific issues
 - **Data Sparsity Issues** — Coverage gaps, EAV format, coordinate quality
 - **Foreign Key Gotchas** — Orphan records, join key mismatches
 - **Data Interpretation Issues** — Flag definitions, count relationships
@@ -83,23 +68,32 @@ Identify which section of `docs/pitfalls.md` the entry belongs under. The curren
 - **Fitness Browser Pitfalls** — String columns, case sensitivity, large tables
 - **Genomes Pitfalls** — UUID identifiers, billion-row tables
 
-If the issue doesn't fit any existing section, propose a new section heading.
+If the issue doesn't fit any existing category, propose a new one.
 
 ### Step 5: Present for Review
 
-Show the user:
-1. The drafted entry text (full markdown)
-2. Where it will be placed (which section of pitfalls.md, after which existing entry)
+Show the user the drafted entry (title, category, explanation, code example, solution).
 
-Ask: "Here's the draft entry. Does this look accurate? Should I add it to `docs/pitfalls.md` under the [Section Name] section?"
+Ask: "Here's the draft entry. Does this look accurate? Should I add it to the pitfalls knowledge base?"
 
 Wait for approval. If the user wants changes, revise and re-present.
 
-### Step 6: Write to pitfalls.md
+### Step 6: Write to OpenViking
 
-On approval, append the entry to the appropriate section in `docs/pitfalls.md` using the Edit tool. Place it at the end of the relevant section (before the `---` separator or the next section heading).
+On approval, create a slug from the title and add the pitfall:
 
-After writing, confirm: "Added to `docs/pitfalls.md` under [Section Name]."
+```bash
+uv run scripts/query_knowledge_unified.py add-pitfall "<slug>" --json '{
+  "title": "<Descriptive Title>",
+  "category": "<Category Name>",
+  "project_ids": ["<project_id>"],
+  "problem": "<Full explanation with code examples>",
+  "solution": "<One-sentence actionable fix>",
+  "tags": ["<relevant>", "<tags>"]
+}'
+```
+
+After writing, confirm: "Pitfall added to the knowledge base."
 
 Then **resume the original task** — pitfall capture should not derail the user's workflow.
 
@@ -109,4 +103,3 @@ Then **resume the original task** — pitfall capture should not derail the user
 - **One pitfall at a time.** If multiple issues arise, handle each separately to avoid overwhelming the user.
 - **Be specific.** Vague entries like "queries can be slow" are not useful. Include the exact table, the exact error, the exact fix.
 - **Include the project tag** when the pitfall was discovered in the context of a specific project. This helps with traceability.
-- **Update the Quick Checklist** at the bottom of pitfalls.md if the new pitfall warrants a new checklist item.

@@ -16,7 +16,7 @@ Read all of these files:
 
 1. **`projects/{id}/RESEARCH_PLAN.md`** — the plan being reviewed
 2. **`projects/{id}/README.md`** — project overview
-3. **`docs/pitfalls.md`** — identify which pitfalls are relevant to the planned queries and tables
+3. **OpenViking pitfalls (query with `uv run scripts/query_knowledge_unified.py pitfalls`)** — identify which pitfalls are relevant to the planned queries and tables
 4. **`docs/performance.md`** — check if query strategies follow recommended patterns
 5. **`docs/collections.md`** — verify referenced databases exist and are accessible
 6. **`PROJECT.md`** — check project conventions (structure, reproducibility standards, data organization)
@@ -37,7 +37,7 @@ Also scan existing projects:
 
 ### 2. Relevant Pitfalls
 
-This is one of the most valuable things you can provide. Read `docs/pitfalls.md` thoroughly and identify **specific entries** that apply to the planned tables, queries, or approach:
+This is one of the most valuable things you can provide. Search OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) thoroughly and identify **specific entries** that apply to the planned tables, queries, or approach:
 
 - Quote the relevant pitfall heading and briefly explain how it affects this plan
 - Flag any planned queries that would hit known gotchas (e.g., string-typed numeric columns, species ID format, large table scans)
@@ -95,7 +95,7 @@ Return a concise list of suggestions. Start with a one-sentence overall assessme
 **Optional** (nice-to-have):
 1. {issue + suggestion}
 
-**Relevant pitfalls from docs/pitfalls.md**:
+**Relevant pitfalls from OpenViking pitfalls knowledge base**:
 - {pitfall heading}: {how it applies to this plan}
 ```
 

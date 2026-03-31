@@ -301,6 +301,66 @@ def _handle_remember(args) -> int:
     return 0
 
 
+def _handle_pitfalls(args) -> int:
+    items = DELIVERY.list_operational(
+        "pitfall",
+        search=getattr(args, "search", None),
+        category=getattr(args, "category", None),
+        tier=Tier(args.tier),
+    )
+    _print_items(items, "Pitfalls")
+    return 0
+
+
+def _handle_add_pitfall(args) -> int:
+    data = json.loads(args.json)
+    uri = DELIVERY.add_operational("pitfall", args.id, data)
+    print(f"Pitfall created: {uri}")
+    return 0
+
+
+def _handle_ideas(args) -> int:
+    items = DELIVERY.list_operational(
+        "research_idea",
+        search=getattr(args, "search", None),
+        status=getattr(args, "status", None),
+        tier=Tier(args.tier),
+    )
+    _print_items(items, "Research Ideas")
+    return 0
+
+
+def _handle_add_idea(args) -> int:
+    data = json.loads(args.json)
+    uri = DELIVERY.add_operational("research_idea", args.id, data)
+    print(f"Research idea created: {uri}")
+    return 0
+
+
+def _handle_update_idea(args) -> int:
+    updates = json.loads(args.json)
+    uri = DELIVERY.update_operational("research_idea", args.id, updates)
+    print(f"Research idea updated: {uri}")
+    return 0
+
+
+def _handle_discoveries(args) -> int:
+    items = DELIVERY.list_operational(
+        "discovery",
+        search=getattr(args, "search", None),
+        tier=Tier(args.tier),
+    )
+    _print_items(items, "Discoveries")
+    return 0
+
+
+def _handle_add_discovery(args) -> int:
+    data = json.loads(args.json)
+    uri = DELIVERY.add_operational("discovery", args.id, data)
+    print(f"Discovery created: {uri}")
+    return 0
+
+
 def _handle_ingest_entity(args) -> int:
     profile = json.loads(args.profile_json)
     relations = json.loads(args.relations_json) if args.relations_json else None
@@ -334,6 +394,13 @@ _HANDLERS = {
     "recall": _handle_recall,
     "remember": _handle_remember,
     "ingest-entity": _handle_ingest_entity,
+    "pitfalls": _handle_pitfalls,
+    "add-pitfall": _handle_add_pitfall,
+    "ideas": _handle_ideas,
+    "add-idea": _handle_add_idea,
+    "update-idea": _handle_update_idea,
+    "discoveries": _handle_discoveries,
+    "add-discovery": _handle_add_discovery,
 }
 
 
@@ -441,6 +508,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_remember.add_argument("--entities", default=None, help="Comma-separated entity refs")
     p_remember.add_argument("--projects", default=None, help="Comma-separated project IDs")
     p_remember.add_argument("--tags", default=None, help="Comma-separated tags")
+
+    # -- Operational knowledge (pitfalls, ideas, discoveries) --
+
+    p_pitfalls = sub.add_parser("pitfalls", help="List/search pitfalls")
+    p_pitfalls.add_argument("search", nargs="?", help="Optional search query")
+    p_pitfalls.add_argument("--category", default=None, help="Filter by category")
+
+    p_add_pitfall = sub.add_parser("add-pitfall", help="Add a pitfall")
+    p_add_pitfall.add_argument("id", help="Pitfall slug identifier")
+    p_add_pitfall.add_argument("--json", required=True, help="Pitfall data as JSON string")
+
+    p_ideas = sub.add_parser("ideas", help="List/search research ideas")
+    p_ideas.add_argument("search", nargs="?", help="Optional search query")
+    p_ideas.add_argument("--status", default=None, help="Filter by status (PROPOSED/IN_PROGRESS/COMPLETED)")
+
+    p_add_idea = sub.add_parser("add-idea", help="Add a research idea")
+    p_add_idea.add_argument("id", help="Idea slug identifier")
+    p_add_idea.add_argument("--json", required=True, help="Idea data as JSON string")
+
+    p_update_idea = sub.add_parser("update-idea", help="Update a research idea")
+    p_update_idea.add_argument("id", help="Idea slug identifier")
+    p_update_idea.add_argument("--json", required=True, help="Fields to update as JSON string")
+
+    p_discoveries = sub.add_parser("discoveries", help="List/search discoveries")
+    p_discoveries.add_argument("search", nargs="?", help="Optional search query")
+
+    p_add_discovery = sub.add_parser("add-discovery", help="Add a discovery")
+    p_add_discovery.add_argument("id", help="Discovery slug identifier")
+    p_add_discovery.add_argument("--json", required=True, help="Discovery data as JSON string")
 
     p_ingest = sub.add_parser("ingest-entity", help="Create entity with profile")
     p_ingest.add_argument("type", choices=["organism", "gene", "pathway", "method", "concept"])

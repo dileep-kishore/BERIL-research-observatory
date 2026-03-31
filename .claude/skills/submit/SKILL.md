@@ -35,8 +35,8 @@ Run these checks against the project directory and print a checklist summary:
 - `REPORT.md` exists in `projects/{project_id}/` and contains a `## Key Findings` section
 
 **Advisory checks** (warn but allow submission):
-- Discoveries documented in `docs/discoveries.md` — search for `[{project_id}]` tag
-- Pitfalls documented in `docs/pitfalls.md` — search for the project name or id
+- Discoveries documented in OpenViking — run `uv run scripts/query_knowledge_unified.py discoveries "[{project_id}]"`
+- Pitfalls documented in OpenViking — run `uv run scripts/query_knowledge_unified.py pitfalls "[project_name]"`
 - Research plan documented — check if `projects/{project_id}/RESEARCH_PLAN.md` exists (or `research_plan.md` for legacy projects)
 - Interpretation documented — check if `projects/{project_id}/REPORT.md` exists and contains a `## Interpretation` section
 - References documented — check if `projects/{project_id}/references.md` exists (created by `/literature-review`)
@@ -110,7 +110,7 @@ CLAUDECODE= claude -p \
   --system-prompt "$(cat .claude/reviewer/SYSTEM_PROMPT.md)" \
   --allowedTools "Read,Write" \
   --dangerously-skip-permissions \
-  "Review the project at projects/{project_id}/. Read all files in the project directory — especially README.md, RESEARCH_PLAN.md, and REPORT.md. Also read docs/pitfalls.md for known issues. Write your review to projects/{project_id}/REVIEW.md."
+  "Review the project at projects/{project_id}/. Read all files in the project directory — especially README.md, RESEARCH_PLAN.md, and REPORT.md. Also search for known pitfalls: run \`uv run scripts/query_knowledge_unified.py pitfalls\`. Write your review to projects/{project_id}/REVIEW.md."
 ```
 
 > **Note**: The `CLAUDECODE=` prefix is required to allow launching a Claude subprocess from within Claude Code. Without it, the command fails with a "can't launch Claude inside Claude" error.
@@ -149,7 +149,7 @@ After presenting the review summary, provide next steps based on the review outc
 **If the review has no critical or important issues** (clean review):
 - Remind the user to mark the project as complete in these locations:
   1. `projects/{project_id}/README.md` — ensure `## Status` says "Completed" with a one-line summary
-  2. `docs/research_ideas.md` — move the project entry from "High/Medium Priority Ideas" to "Completed Ideas" with a results summary
+  2. OpenViking research ideas — update the idea status: `uv run scripts/query_knowledge_unified.py update-idea "<slug>" --json '{"status": "COMPLETED", "progress": ["Results summary"]}'`
 - Suggest committing all changes
 
 **If the review has critical or important issues**:
@@ -164,4 +164,4 @@ After presenting the review summary, provide next steps based on the review outc
 
 ## Pitfall Detection
 
-When you encounter errors, unexpected results, retry cycles, performance issues, or data surprises during this task, follow the pitfall-capture protocol. Read `.claude/skills/pitfall-capture/SKILL.md` and follow its instructions to determine whether the issue should be added to `docs/pitfalls.md`.
+When you encounter errors, unexpected results, retry cycles, performance issues, or data surprises during this task, follow the pitfall-capture protocol. Read `.claude/skills/pitfall-capture/SKILL.md` and follow its instructions to determine whether the issue should be documented.

@@ -45,7 +45,7 @@ Hypothesis generation, research planning, and notebook creation are handled auto
 
 ### Phase A: Orientation & Ideation
 
-The agent reads the core documentation (`PROJECT.md`, `docs/overview.md`, `docs/collections.md`, `docs/pitfalls.md`, `docs/performance.md`, `docs/research_ideas.md`), checks the environment (auth token, gh CLI), and engages with you about your research interest.
+The agent reads the core documentation (`PROJECT.md`, `docs/overview.md`, `docs/collections.md`, `docs/performance.md`), queries OpenViking for pitfalls and research ideas, checks the environment (auth token, gh CLI), and engages with you about your research interest.
 
 **What happens**:
 - Explores relevant BERDL tables and their row counts
@@ -70,14 +70,14 @@ The agent writes a structured research plan and scaffolds the project directory.
 
 **Best practices**: The agent suggests naming the session to match the project ID, creates a `projects/{id}` branch by default, and commits the initial files before proceeding. (If you prefer to stay on main, you can opt out.)
 
-**Optional plan review**: The agent offers to run a quick review of the research plan before starting analysis. A read-only subagent checks the plan against `docs/pitfalls.md`, `docs/performance.md`, schema documentation, and project conventions. It surfaces relevant pitfalls, flags potential query issues, and checks for overlap with existing projects. The suggestions are advisory — the user can address them, note them, or skip.
+**Optional plan review**: The agent offers to run a quick review of the research plan before starting analysis. A read-only subagent checks the plan against OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`), `docs/performance.md`, schema documentation, and project conventions. It surfaces relevant pitfalls, flags potential query issues, and checks for overlap with existing projects. The suggestions are advisory — the user can address them, note them, or skip.
 
 ### Phase C: Analysis (Notebooks)
 
 The agent generates numbered notebooks (`01_data_exploration.ipynb`, `02_analysis.ipynb`, etc.) with PySpark boilerplate, SQL queries, and visualization scaffolding, then runs them.
 
 **What happens**:
-- Notebooks follow safety rules from `docs/pitfalls.md` and query patterns
+- Notebooks follow safety rules from OpenViking pitfalls and query patterns
 - Includes NULL checks, row counts, and data-quality validation cells
 - Updates `RESEARCH_PLAN.md` with revision tags when the approach changes
 - Commits after each major milestone
@@ -170,12 +170,12 @@ Use `/berdl` for quick, ad-hoc data exploration:
 
 ### Handling errors
 
-When queries fail or return unexpected results, the pitfall-capture protocol activates automatically. It documents the issue in [pitfalls.md](pitfalls.md) so future projects avoid the same problem.
+When queries fail or return unexpected results, the pitfall-capture protocol activates automatically. It documents the issue in OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) so future projects avoid the same problem.
 
 ### Key references
 
 - [overview.md](overview.md) -- Data architecture and table descriptions
 - [collections.md](collections.md) -- Full database inventory
-- [pitfalls.md](pitfalls.md) -- Common query issues and solutions
-- [research_ideas.md](research_ideas.md) -- Backlog of research questions
+- OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) -- Common query issues and solutions
+- OpenViking research ideas (`uv run scripts/query_knowledge_unified.py ideas`) -- Backlog of research questions
 - [schema.md](schema.md) -- Schema documentation index

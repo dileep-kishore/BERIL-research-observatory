@@ -21,7 +21,16 @@ No arguments required. The skill reads the full project landscape automatically.
 
 ### Step 1: Read the Research Idea Backlog
 
-Read `docs/research_ideas.md` in full. For each entry, note:
+Query OpenViking for existing research ideas:
+
+```bash
+uv run scripts/query_knowledge_unified.py ideas
+uv run scripts/query_knowledge_unified.py ideas --status PROPOSED
+uv run scripts/query_knowledge_unified.py ideas --status IN_PROGRESS
+uv run scripts/query_knowledge_unified.py ideas --status COMPLETED
+```
+
+For each entry, note:
 - **Status**: PROPOSED, IN_PROGRESS, or COMPLETED
 - **Priority** and **Effort** tags
 - **Research Question** and **Hypotheses**
@@ -40,7 +49,7 @@ For each project, capture: `id`, `status`, `research_question`, `key_findings`, 
 
 Build lists: `finished_projects`, `in_progress_projects`, `proposed_projects`.
 
-Cross-check against `research_ideas.md` entries from Step 1.
+Cross-check against research ideas from Step 1.
 
 ### Step 3: Deep-Read Top-Relevant Projects
 
@@ -59,12 +68,18 @@ For remaining projects, the OpenViking summaries (key_findings, tags, databases_
 
 ### Step 4: Read the Discoveries Log
 
-Read `docs/discoveries.md`. Extract:
+Query OpenViking for discoveries:
+
+```bash
+uv run scripts/query_knowledge_unified.py discoveries
+```
+
+Extract:
 - Serendipitous findings not yet formalized into a project
 - Patterns noted across multiple analyses
 - Data anomalies flagged for follow-up
 
-These often represent high-value starting points that are not yet in `research_ideas.md`.
+These often represent high-value starting points that are not yet in the research ideas backlog.
 
 ### Step 5: Understand Available Data
 
@@ -84,6 +99,12 @@ method gaps, untested hypotheses, and unexplored entity pairs.
 Use this output directly in Step 6 under "Entity gaps" and "Untested hypotheses".
 
 Additionally, run `uv run scripts/query_knowledge_unified.py hypotheses rejected` for rejected hypotheses whose alternatives haven't been explored.
+
+Also search for known pitfalls to avoid repeating past mistakes:
+
+```bash
+uv run scripts/query_knowledge_unified.py pitfalls
+```
 
 ### Step 6: Synthesize the Landscape
 
@@ -198,26 +219,38 @@ Present a structured recommendation to the user:
 
 After presenting the recommendation, ask:
 
-> "Would you like me to register this in `docs/research_ideas.md` and start it as a new project?"
-
-**Rules for `research_ideas.md`:**
-- **Only append new entries.** Never edit, reformat, or modify existing sections or entries.
-- If the recommendation is largely an update or extension of an existing project or PROPOSED idea, note the relationship in the new entry's summary (e.g., "Extends `{project_id}`" or "Builds on PROPOSED idea `{idea_title}`") but do not alter the original entry.
+> "Would you like me to register this as a research idea and start it as a new project?"
 
 If yes:
 
-1. **Add to research_ideas.md**: Append the new entry at the bottom of the file using the standard format matching existing entries (Status: PROPOSED, Priority, Effort, Research Question, Approach, Hypotheses, Impact, Dependencies, Location). Do not modify any existing content.
+1. **Add to OpenViking**: Create the research idea in the knowledge base:
+
+```bash
+uv run scripts/query_knowledge_unified.py add-idea "<slug>" --json '{
+  "title": "<Title>",
+  "status": "PROPOSED",
+  "priority": "<HIGH/MEDIUM/LOW>",
+  "effort": "<effort estimate>",
+  "research_question": "<question>",
+  "approach": ["Step 1", "Step 2", "Step 3"],
+  "hypotheses": {"h1": "<hypothesis>", "h0": "<null hypothesis>"},
+  "impact": "<impact statement>",
+  "dependencies": ["<dep1>", "<dep2>"],
+  "tags": ["<tag1>", "<tag2>"]
+}'
+```
+
 2. **Start the project**: Invoke `/berdl_start` to scaffold and begin the new project, using the confirmed research idea (title, research question, hypotheses, approach, and data sources from Step 10) as the starting context for ideation.
 
-If no, leave no files modified.
+If no, leave no changes.
 
 ## Integration
 
-- **Reads from**: OpenViking (via `scripts/query_knowledge_unified.py`), `docs/research_ideas.md`, `docs/discoveries.md`, `docs/collections.md`, `projects/*/REPORT.md` (top 3-5 only)
+- **Reads from**: OpenViking (via `scripts/query_knowledge_unified.py`) — research ideas, discoveries, pitfalls, knowledge graph, projects; `docs/collections.md`; `projects/*/REPORT.md` (top 3-5 only)
 - **Calls**: `/literature-review` (Step 9, for novelty check on top candidate); `/berdl_start` (Step 11, if user confirms the idea)
-- **Optionally writes**: `docs/research_ideas.md` (appends new PROPOSED entry only — never edits existing entries)
+- **Optionally writes**: OpenViking research idea (via `add-idea` subcommand)
 - **Consumed by**: `/literature-review`, `/synthesize`
 
 ## Pitfall Detection
 
-When you encounter errors, unexpected results, retry cycles, performance issues, or data surprises during this task, follow the pitfall-capture protocol. Read `.claude/skills/pitfall-capture/SKILL.md` and follow its instructions to determine whether the issue should be added to `docs/pitfalls.md`.
+When you encounter errors, unexpected results, retry cycles, performance issues, or data surprises during this task, follow the pitfall-capture protocol in `.claude/skills/pitfall-capture/SKILL.md`.

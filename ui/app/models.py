@@ -264,7 +264,7 @@ class Skill:
 
 @dataclass
 class Discovery:
-    """A research discovery from docs/discoveries.md."""
+    """A research discovery from OpenViking."""
 
     id: str
     title: str
@@ -304,7 +304,7 @@ class Table:
 
 @dataclass
 class Pitfall:
-    """A pitfall or gotcha from docs/pitfalls.md."""
+    """A pitfall or gotcha from OpenViking."""
 
     id: str
     title: str
@@ -328,7 +328,7 @@ class PerformanceTip:
 
 @dataclass
 class ResearchIdea:
-    """A research idea from docs/research_ideas.md."""
+    """A research idea from OpenViking."""
 
     id: str
     title: str

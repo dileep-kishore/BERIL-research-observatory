@@ -1173,72 +1173,44 @@ class RepositoryParser:
         )
 
     def parse_discoveries(self) -> list[Discovery]:
-        """Parse discoveries from docs/discoveries.md."""
+        """Load discoveries from OpenViking."""
+        try:
+            return self._load_discoveries_from_openviking()
+        except Exception:
+            return []
+
+    def _load_discoveries_from_openviking(self) -> list[Discovery]:
+        from observatory_context.runtime import build_delivery
+        from observatory_context.models import Tier
+
+        delivery = build_delivery(require_live=True)
+        items = delivery.list_operational("discovery", tier=Tier.L2)
         discoveries = []
-        discoveries_path = self.repo_path / "docs" / "discoveries.md"
+        for item in items:
+            import yaml as _yaml
 
-        if not discoveries_path.exists():
-            return discoveries
-
-        content = discoveries_path.read_text()
-
-        # Strip the template section at the end (## Template ...)
-        template_match = re.search(r"^## Template\b", content, re.MULTILINE)
-        if template_match:
-            content = content[: template_match.start()]
-
-        # Extract date headers and their positions first
-        date_positions = []
-        for m in re.finditer(r"^## (\d{4}-\d{2})\s*$", content, re.MULTILINE):
-            date_positions.append((m.start(), datetime.strptime(m.group(1), "%Y-%m")))
-
-        # Split by ### headers (discovery entries)
-        sections = re.split(r"\n###\s+", content)
-
-        # Track cumulative character position to map sections to dates
-        current_date = None
-        pos = 0
-
-        for section in sections[1:]:  # Skip intro
-            # Advance past the split delimiter to find our position
-            pos = content.find(section, pos)
-
-            # Update current_date from any date headers before this position
-            while date_positions and date_positions[0][0] < pos:
-                current_date = date_positions.pop(0)[1]
-
-            if not section.strip():
-                continue
-
-            lines = section.split("\n")
-            title_line = lines[0].strip()
-
-            # Parse [project_tag] from title
-            match = re.match(r"\[(\w+)\]\s+(.+)", title_line)
-            if match:
-                project_tag = match.group(1)
-                title = match.group(2)
-                # Strip any trailing ## date headers from the content
-                content_text = "\n".join(lines[1:])
-                content_text = re.sub(r"\n## \d{4}-\d{2}\s*$", "", content_text).strip()
-
-                # Skip template section
-                if (
-                    "Brief title" in title
-                    or "Description of what was discovered" in content_text
-                ):
-                    continue
-
-                discovery = Discovery(
-                    id=slugify(title),
-                    title=title,
+            data = _yaml.safe_load(item.content) if item.content else {}
+            if not isinstance(data, dict):
+                data = {}
+            project_ids = data.get("project_ids", item.project_ids or [])
+            project_tag = project_ids[0] if project_ids else ""
+            date_str = data.get("date", "")
+            date_obj = None
+            if date_str:
+                try:
+                    date_obj = datetime.strptime(date_str[:7], "%Y-%m")
+                except (ValueError, IndexError):
+                    pass
+            discoveries.append(
+                Discovery(
+                    id=slugify(item.title),
+                    title=item.title,
                     project_tag=project_tag,
-                    content=content_text,
-                    date=current_date,
-                    related_projects=[project_tag],
+                    content=data.get("description", item.content or ""),
+                    date=date_obj,
+                    related_projects=project_ids,
                 )
-                discoveries.append(discovery)
-
+            )
         return discoveries
 
     def parse_schema(self) -> dict[str, list[Table]]:
@@ -1398,51 +1370,38 @@ class RepositoryParser:
         return tables
 
     def parse_pitfalls(self) -> list[Pitfall]:
-        """Parse pitfalls from docs/pitfalls.md."""
+        """Load pitfalls from OpenViking."""
+        try:
+            return self._load_pitfalls_from_openviking()
+        except Exception:
+            return []
+
+    def _load_pitfalls_from_openviking(self) -> list[Pitfall]:
+        from observatory_context.runtime import build_delivery
+        from observatory_context.models import Tier
+
+        delivery = build_delivery(require_live=True)
+        items = delivery.list_operational("pitfall", tier=Tier.L2)
         pitfalls = []
-        pitfalls_path = self.repo_path / "docs" / "pitfalls.md"
+        for item in items:
+            import yaml as _yaml
 
-        if not pitfalls_path.exists():
-            return pitfalls
-
-        content = pitfalls_path.read_text()
-
-        # Split by ## headers (categories)
-        category_sections = re.split(r"\n##\s+", content)
-
-        for cat_section in category_sections[1:]:  # Skip intro
-            lines = cat_section.split("\n")
-            category = lines[0].strip()
-
-            # Skip non-category sections
-            if category.lower() in ("overview", "purpose"):
-                continue
-
-            # Split by ### headers (individual pitfalls)
-            pitfall_sections = re.split(r"\n###\s+", cat_section)
-
-            for pitfall_section in pitfall_sections[1:]:
-                pitfall_lines = pitfall_section.split("\n")
-                title = pitfall_lines[0].strip()
-
-                # Get content as problem description
-                problem = "\n".join(pitfall_lines[1:]).strip()
-
-                # Try to extract code example
-                code_match = re.search(r"```sql\n(.*?)```", problem, re.DOTALL)
-                code_example = code_match.group(1).strip() if code_match else None
-
-                pitfalls.append(
-                    Pitfall(
-                        id=slugify(title),
-                        title=title,
-                        category=category,
-                        problem=problem,
-                        solution="",  # Could parse if there's a structured format
-                        code_example=code_example,
-                    )
+            data = _yaml.safe_load(item.content) if item.content else {}
+            if not isinstance(data, dict):
+                data = {}
+            problem = data.get("problem", item.content or "")
+            code_match = re.search(r"```(?:sql|python)\n(.*?)```", problem, re.DOTALL)
+            pitfalls.append(
+                Pitfall(
+                    id=slugify(item.title),
+                    title=item.title,
+                    category=data.get("category", item.metadata.get("category", "General")),
+                    problem=problem,
+                    solution=data.get("solution", ""),
+                    project_tag=(data.get("project_ids") or [None])[0],
+                    code_example=code_match.group(1).strip() if code_match else None,
                 )
-
+            )
         return pitfalls
 
     def parse_performance(self) -> list[PerformanceTip]:
@@ -1484,113 +1443,60 @@ class RepositoryParser:
         return tips
 
     def parse_research_ideas(self) -> list[ResearchIdea]:
-        """Parse research ideas from docs/research_ideas.md."""
+        """Load research ideas from OpenViking."""
+        try:
+            return self._load_ideas_from_openviking()
+        except Exception:
+            return []
+
+    def _load_ideas_from_openviking(self) -> list[ResearchIdea]:
+        from observatory_context.runtime import build_delivery
+        from observatory_context.models import Tier
+
+        delivery = build_delivery(require_live=True)
+        items = delivery.list_operational("research_idea", tier=Tier.L2)
         ideas = []
-        ideas_path = self.repo_path / "docs" / "research_ideas.md"
+        for item in items:
+            import yaml as _yaml
 
-        if not ideas_path.exists():
-            return ideas
+            data = _yaml.safe_load(item.content) if item.content else {}
+            if not isinstance(data, dict):
+                data = {}
 
-        content = ideas_path.read_text()
-
-        # Determine priority from section headers
-        current_priority = Priority.MEDIUM
-
-        # Split by ### headers (individual ideas)
-        sections = re.split(r"\n###\s+", content)
-
-        for section in sections[1:]:
-            # Check if this looks like a priority section header (## High Priority Ideas)
-            if section.startswith("## "):
-                if "High Priority" in section:
-                    current_priority = Priority.HIGH
-                elif "Medium Priority" in section:
-                    current_priority = Priority.MEDIUM
-                elif "Low Priority" in section:
-                    current_priority = Priority.LOW
-                continue
-
-            lines = section.split("\n")
-            if not lines:
-                continue
-
-            title_line = lines[0].strip()
-
-            # Parse [source_tag] Title
-            match = re.match(r"\[([^\]]+)\]\s+(.+)", title_line)
-            if not match:
-                continue
-
-            source_tag = match.group(1)
-            title = match.group(2)
-            section_content = "\n".join(lines[1:])
-
-            # Extract structured fields
-            status_match = re.search(r"\*\*Status\*\*:\s*(\w+)", section_content)
-            priority_match = re.search(r"\*\*Priority\*\*:\s*(\w+)", section_content)
-            effort_match = re.search(
-                r"\*\*Effort\*\*:\s*(.+?)(?:\n|$)", section_content
-            )
-            research_q_match = re.search(
-                r"\*\*Research Question\*\*:\s*(.+?)(?=\n\n|\*\*|\Z)",
-                section_content,
-                re.DOTALL,
-            )
-            hypothesis_match = re.search(
-                r"\*\*Hypothesis\*\*:\s*(.+?)(?=\n\n|\*\*|\Z)",
-                section_content,
-                re.DOTALL,
-            )
-            approach_match = re.search(
-                r"\*\*Approach\*\*:\s*(.+?)(?=\n\n|\*\*|\Z)",
-                section_content,
-                re.DOTALL,
-            )
-            impact_match = re.search(
-                r"\*\*Impact\*\*:\s*(.+?)(?:\n|$)", section_content
-            )
-
-            # Parse status
+            status_str = data.get("status", "PROPOSED").upper()
             status = IdeaStatus.PROPOSED
-            if status_match:
-                status_str = status_match.group(1).upper()
-                if status_str == "IN_PROGRESS":
-                    status = IdeaStatus.IN_PROGRESS
-                elif status_str == "COMPLETED":
-                    status = IdeaStatus.COMPLETED
+            if status_str == "IN_PROGRESS":
+                status = IdeaStatus.IN_PROGRESS
+            elif status_str == "COMPLETED":
+                status = IdeaStatus.COMPLETED
 
-            # Parse priority
-            priority = current_priority
-            if priority_match:
-                priority_str = priority_match.group(1).upper()
-                if priority_str == "HIGH":
-                    priority = Priority.HIGH
-                elif priority_str == "MEDIUM":
-                    priority = Priority.MEDIUM
-                elif priority_str == "LOW":
-                    priority = Priority.LOW
+            priority_str = data.get("priority", "MEDIUM").upper()
+            priority = Priority.MEDIUM
+            if priority_str == "HIGH":
+                priority = Priority.HIGH
+            elif priority_str == "LOW":
+                priority = Priority.LOW
+
+            hypotheses = data.get("hypotheses", {})
+            hyp_text = hypotheses.get("h1", "") if isinstance(hypotheses, dict) else str(hypotheses)
+
+            approach = data.get("approach", [])
+            approach_text = "\n".join(f"- {s}" for s in approach) if isinstance(approach, list) else str(approach)
 
             ideas.append(
                 ResearchIdea(
-                    id=slugify(title),
-                    title=title,
-                    research_question=research_q_match.group(1).strip()
-                    if research_q_match
-                    else "",
+                    id=slugify(item.title),
+                    title=item.title,
+                    research_question=data.get("research_question", ""),
                     status=status,
                     priority=priority,
-                    hypothesis=hypothesis_match.group(1).strip()
-                    if hypothesis_match
-                    else None,
-                    approach=approach_match.group(1).strip()
-                    if approach_match
-                    else None,
-                    effort=effort_match.group(1).strip() if effort_match else None,
-                    impact=impact_match.group(1).strip() if impact_match else None,
-                    cross_project_tags=[source_tag],
+                    hypothesis=hyp_text or None,
+                    approach=approach_text or None,
+                    effort=data.get("effort"),
+                    impact=data.get("impact"),
+                    cross_project_tags=[data.get("source_project", "")] if data.get("source_project") else [],
                 )
             )
-
         return ideas
 
     def parse_collections(self) -> list[Collection]:

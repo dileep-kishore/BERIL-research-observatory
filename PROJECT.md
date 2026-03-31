@@ -17,12 +17,12 @@ When working on any science project, update `docs/` when you discover:
 
 | Discovery Type | Add To |
 |----------------|--------|
-| Query pitfall or gotcha | `docs/pitfalls.md` |
+| Query pitfall or gotcha | OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) |
 | Performance issue or strategy | `docs/performance.md` |
-| Data limitation or coverage gap | `docs/pitfalls.md` |
+| Data limitation or coverage gap | OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) |
 | Useful insight about data structure | `docs/schemas/{collection}.md` |
-| Any other learning worth sharing | `docs/discoveries.md` |
-| Research idea or future direction | `docs/research_ideas.md` |
+| Any other learning worth sharing | OpenViking discoveries (`uv run scripts/query_knowledge_unified.py discoveries`) |
+| Research idea or future direction | OpenViking research ideas (`uv run scripts/query_knowledge_unified.py ideas`) |
 
 **Tag each addition** with the project that uncovered it:
 ```markdown
@@ -37,10 +37,10 @@ Discovered that only 83K/293K genomes have embeddings...
 | `docs/collections.md` | Overview of all BERDL databases and tenants |
 | `docs/schemas/` | Per-collection schema documentation |
 | `docs/overview.md` | Project goals, data workflow, scientific context |
-| `docs/pitfalls.md` | SQL gotchas, data sparsity, common errors |
+| OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) | SQL gotchas, data sparsity, common errors |
 | `docs/performance.md` | Query strategies for large tables |
-| `docs/discoveries.md` | Running log of insights (low-friction capture) |
-| `docs/research_ideas.md` | Future research directions, project ideas |
+| OpenViking discoveries (`uv run scripts/query_knowledge_unified.py discoveries`) | Running log of insights (low-friction capture) |
+| OpenViking research ideas (`uv run scripts/query_knowledge_unified.py ideas`) | Future research directions, project ideas |
 
 ## Project Structure
 
@@ -179,7 +179,7 @@ Project data files are gitignored (too large for git) but are archived to the `m
 - **API**: `https://hub.berdl.kbase.us/apis/mcp/`
 - **Direct Spark**: Use JupyterHub for complex queries
 
-Use `/berdl` skill for BERDL queries. Read `docs/pitfalls.md` before your first query.
+Use `/berdl` skill for BERDL queries. Query OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) before your first query.
 
 ### Local Spark Connect
 
@@ -217,7 +217,7 @@ from get_spark_session import get_spark_session
 spark = get_spark_session()
 ```
 
-See `docs/pitfalls.md` ("Use the Right Import for Your Environment") for the full breakdown including CLI scripts on JupyterHub.
+See OpenViking pitfalls (`uv run scripts/query_knowledge_unified.py pitfalls`) for the "Use the Right Import for Your Environment" entry with the full breakdown including CLI scripts on JupyterHub.
 
 Then query any database — **keep data as Spark DataFrames** and use PySpark operations:
 ```python

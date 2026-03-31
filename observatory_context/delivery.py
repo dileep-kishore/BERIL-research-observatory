@@ -25,6 +25,8 @@ from observatory_context.uris import (
     build_entity_uri,
     build_knowledge_graph_uri,
     build_memory_uri,
+    build_operational_collection_uri,
+    build_operational_item_uri,
     build_timeline_uri,
 )
 
@@ -473,6 +475,166 @@ class ContextDelivery:
             except Exception:
                 logger.warning("Failed to load memory hit %s", hit.get("uri"), exc_info=True)
         return items
+
+    # ------------------------------------------------------------------
+    # Operational knowledge (pitfalls, research ideas, discoveries)
+    # ------------------------------------------------------------------
+
+    _OPERATIONAL_FILE_NAMES = {
+        "pitfall": "pitfall.yaml",
+        "research_idea": "idea.yaml",
+        "discovery": "discovery.yaml",
+    }
+
+    def _operational_item_uri(self, collection: str, item_id: str) -> str:
+        file_name = self._OPERATIONAL_FILE_NAMES[collection]
+        return f"{build_operational_item_uri(collection, item_id)}/{file_name}"
+
+    def list_operational(
+        self,
+        collection: str,
+        *,
+        search: str | None = None,
+        status: str | None = None,
+        category: str | None = None,
+        tier: Tier = Tier.L2,
+        limit: int = 50,
+    ) -> list[ContextItem]:
+        """List or search items in an operational knowledge collection.
+
+        Parameters
+        ----------
+        collection:
+            One of "pitfall", "research_idea", "discovery".
+        search:
+            Optional semantic search query. If None, lists all items.
+        status:
+            Filter by status (mainly for research_idea).
+        category:
+            Filter by category (mainly for pitfall).
+        tier:
+            Detail tier.
+        limit:
+            Maximum results.
+        """
+        if search:
+            target_uri = build_operational_collection_uri(collection)
+            hits = self.client.search(
+                query=search,
+                target_uri=target_uri,
+                limit=limit,
+            )
+            items = []
+            for hit in hits:
+                try:
+                    uri = hit.get("uri") if isinstance(hit, dict) else getattr(hit, "uri", None)
+                    if uri:
+                        item = self._load_item(uri, tier)
+                        items.append(item)
+                except Exception:
+                    logger.warning("Failed to load search hit %s", hit, exc_info=True)
+        else:
+            uri = build_operational_collection_uri(collection)
+            items = self.browse(uri, tier=tier)
+
+        if status:
+            items = [i for i in items if i.metadata.get("status") == status]
+        if category:
+            items = [i for i in items if i.metadata.get("category") == category]
+        return items
+
+    def add_operational(
+        self,
+        collection: str,
+        item_id: str,
+        data: dict[str, Any],
+        *,
+        wait: bool = True,
+    ) -> str:
+        """Add an item to an operational knowledge collection.
+
+        Parameters
+        ----------
+        collection:
+            One of "pitfall", "research_idea", "discovery".
+        item_id:
+            Slug identifier for the item.
+        data:
+            Item data dict. Must include "title". Other fields depend on
+            the collection type.
+        wait:
+            Whether to block until processed.
+
+        Returns
+        -------
+        str
+            URI of the created resource.
+        """
+        uri = self._operational_item_uri(collection, item_id)
+        today = date.today().isoformat()
+
+        metadata: dict[str, Any] = {
+            "title": data.get("title", item_id),
+            "kind": collection,
+        }
+        for key in ("tags", "project_ids", "category", "status", "priority", "effort"):
+            if key in data:
+                metadata[key] = data[key]
+        if "date" not in data:
+            data["date"] = today
+
+        content = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+        self.ingest_resource(
+            uri,
+            content,
+            metadata=metadata,
+            generate_tiers=True,
+            wait=wait,
+        )
+        return uri
+
+    def update_operational(
+        self,
+        collection: str,
+        item_id: str,
+        updates: dict[str, Any],
+        *,
+        wait: bool = True,
+    ) -> str:
+        """Update fields on an existing operational knowledge item.
+
+        Reads the current content, merges updates, and re-writes.
+
+        Parameters
+        ----------
+        collection:
+            One of "pitfall", "research_idea", "discovery".
+        item_id:
+            Slug identifier for the item.
+        updates:
+            Dict of fields to update (merged into existing data).
+        wait:
+            Whether to block until processed.
+
+        Returns
+        -------
+        str
+            URI of the updated resource.
+        """
+        uri = self._operational_item_uri(collection, item_id)
+
+        # Read existing content
+        raw = self.client.read_resource(uri)
+        _meta, body = split_frontmatter(raw, {})
+        existing = yaml.safe_load(body) if body.strip() else {}
+        if not isinstance(existing, dict):
+            existing = {}
+
+        # Merge updates
+        existing.update(updates)
+
+        return self.add_operational(collection, item_id, existing, wait=wait)
 
     # ------------------------------------------------------------------
     # Ingest operations

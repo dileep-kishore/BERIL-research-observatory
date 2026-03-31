@@ -76,6 +76,12 @@ _MEMORY_STORE_DIRS = {
     "conversations": "conversations",
 }
 
+_OPERATIONAL_COLLECTIONS = {
+    "pitfall": "pitfalls",
+    "research_idea": "research-ideas",
+    "discovery": "discoveries",
+}
+
 
 def build_knowledge_graph_uri() -> str:
     path = PurePosixPath("knowledge-graph")
@@ -104,6 +110,19 @@ def build_hypothesis_uri(hypothesis_id: str) -> str:
 
 def build_timeline_uri() -> str:
     path = PurePosixPath("knowledge-graph", "timeline")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_operational_collection_uri(collection: str) -> str:
+    """URI for an operational knowledge collection (pitfalls, research-ideas, discoveries)."""
+    dir_name = _OPERATIONAL_COLLECTIONS[collection]
+    return f"{_ROOT}/{dir_name}"
+
+
+def build_operational_item_uri(collection: str, item_id: str) -> str:
+    """URI for a specific item in an operational knowledge collection."""
+    dir_name = _OPERATIONAL_COLLECTIONS[collection]
+    path = PurePosixPath(dir_name, _normalize_segment(item_id))
     return f"{_ROOT}/{path.as_posix()}"
 
 

@@ -22,7 +22,7 @@ Read all files in the project directory, including:
 
 Also read these repository-level files for context:
 
-5. **docs/pitfalls.md** — known issues and gotchas; check if the project avoids or documents relevant pitfalls
+5. **OpenViking pitfalls knowledge base (`uv run scripts/query_knowledge_unified.py pitfalls`)** — known issues and gotchas; check if the project avoids or documents relevant pitfalls
 6. **docs/schemas/** — database schema documentation for reference
 
 ## Review Focus Areas
@@ -47,7 +47,7 @@ Provide a one-paragraph overall assessment of the project. What does it do well?
 - Are SQL queries correct and efficient?
 - Are statistical methods appropriate?
 - Is the notebook organized logically (setup → query → analysis → visualization)?
-- Are known pitfalls from docs/pitfalls.md addressed?
+- Are known pitfalls from the OpenViking pitfalls knowledge base addressed?
 - Are there any bugs or logical errors?
 
 ### Findings Assessment

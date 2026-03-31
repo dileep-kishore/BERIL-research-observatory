@@ -32,5 +32,7 @@ def test_all_subcommands_present() -> None:
         "entities", "connections", "hypotheses", "gaps",
         "timeline", "related", "grep", "glob",
         "browse", "traverse", "recall", "remember", "ingest-entity",
+        "pitfalls", "add-pitfall", "ideas", "add-idea", "update-idea",
+        "discoveries", "add-discovery",
     }
     assert set(subparsers.keys()) == expected
