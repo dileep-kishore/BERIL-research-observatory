@@ -33,6 +33,13 @@ class MemoryStore(StrEnum):
     conversations = "conversations"
 
 
+class RelatedItem(BaseModel):
+    """Inline relation returned by OpenViking search."""
+
+    uri: str
+    reason: str
+
+
 class ContextItem(BaseModel):
     """A single context item returned by the ContextDelivery service."""
 
@@ -45,6 +52,11 @@ class ContextItem(BaseModel):
     tags: list[str] = Field(default_factory=list)
     source_type: Literal["resource", "memory"] = "resource"
     metadata: dict[str, Any] = Field(default_factory=dict)
+    score: float | None = None
+    match_reason: str | None = None
+    is_leaf: bool | None = None
+    category: str | None = None
+    related: list[RelatedItem] = Field(default_factory=list)
 
 
 class SearchResults(BaseModel):
@@ -53,6 +65,7 @@ class SearchResults(BaseModel):
     query: str
     items: list[ContextItem]
     total_count: int
+    session_id: str | None = None
 
 
 class RelationEdge(BaseModel):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -14,6 +15,7 @@ from observatory_context.extraction import CBORGExtractor
 from observatory_context.models import (
     ContextItem,
     GraphResult,
+    RelatedItem,
     RelationEdge,
     Scope,
     SearchResults,
@@ -238,11 +240,44 @@ class ContextDelivery:
             try:
                 uri = hit.uri if hasattr(hit, "uri") else hit["uri"]
                 item = self._load_item(uri, tier)
+                # Populate search-specific fields from MatchedContext
+                if hasattr(hit, "score"):
+                    item.score = hit.score
+                elif isinstance(hit, dict) and "score" in hit:
+                    item.score = hit["score"]
+                if hasattr(hit, "match_reason"):
+                    item.match_reason = hit.match_reason
+                elif isinstance(hit, dict) and "match_reason" in hit:
+                    item.match_reason = hit["match_reason"]
+                if hasattr(hit, "is_leaf"):
+                    item.is_leaf = hit.is_leaf
+                elif isinstance(hit, dict) and "is_leaf" in hit:
+                    item.is_leaf = hit["is_leaf"]
+                if hasattr(hit, "category"):
+                    item.category = hit.category
+                elif isinstance(hit, dict) and "category" in hit:
+                    item.category = hit["category"]
+                if hasattr(hit, "relations"):
+                    raw_rels = hit.relations
+                elif isinstance(hit, dict) and "relations" in hit:
+                    raw_rels = hit["relations"]
+                else:
+                    raw_rels = []
+                item.related = [
+                    RelatedItem(
+                        uri=r.get("uri", "") if isinstance(r, dict) else getattr(r, "uri", ""),
+                        reason=r.get("reason", "") if isinstance(r, dict) else getattr(r, "reason", ""),
+                    )
+                    for r in raw_rels
+                ]
                 items.append(item)
             except Exception:
                 logger.warning("Failed to load search hit %s", hit, exc_info=True)
 
-        return SearchResults(query=query, items=items, total_count=len(items))
+        return SearchResults(
+            query=query, items=items, total_count=len(items),
+            session_id=session_id,
+        )
 
     def get(self, uri: str, *, tier: Tier = Tier.L2) -> ContextItem:
         """Retrieve a single resource by URI at the requested tier."""
@@ -491,6 +526,68 @@ class ContextDelivery:
             except Exception:
                 logger.warning("Failed to load memory hit %s", hit.get("uri"), exc_info=True)
         return items
+
+    # ------------------------------------------------------------------
+    # Session management
+    # ------------------------------------------------------------------
+
+    _SESSION_FILE = ".beril-session"
+
+    def start_session(self) -> str:
+        """Create a new OpenViking session and persist its ID locally."""
+        session = self.client.create_session()
+        session_id = session.session_id if hasattr(session, "session_id") else str(session)
+        Path(self._SESSION_FILE).write_text(session_id)
+        return session_id
+
+    def resume_session(self) -> str | None:
+        """Read the persisted session ID, if any."""
+        path = Path(self._SESSION_FILE)
+        if path.exists():
+            return path.read_text().strip()
+        return None
+
+    def commit_session(self, session_id: str | None = None) -> dict[str, Any]:
+        """Commit a session, triggering background memory extraction.
+
+        Parameters
+        ----------
+        session_id
+            Session to commit. If None, uses the persisted session.
+        """
+        sid = session_id or self.resume_session()
+        if not sid:
+            raise LookupError("No active session to commit")
+
+        session = self.client.create_session()
+        # The OpenViking SDK session object needs the ID set
+        if hasattr(session, "session_id"):
+            session.session_id = sid
+        result = session.commit()
+
+        # Clean up session file
+        path = Path(self._SESSION_FILE)
+        path.unlink(missing_ok=True)
+        return result
+
+    def session_status(self, session_id: str | None = None) -> dict[str, Any]:
+        """Get status of a session."""
+        sid = session_id or self.resume_session()
+        if not sid:
+            raise LookupError("No active session")
+        return self.client.client.get_session(sid) if hasattr(self.client.client, "get_session") else {"session_id": sid, "status": "unknown"}
+
+    # ------------------------------------------------------------------
+    # Relation management
+    # ------------------------------------------------------------------
+
+    def link(self, from_uri: str, to_uris: list[str], reason: str = "") -> None:
+        """Create explicit relations between resources."""
+        self.client.link_resources(from_uri, to_uris, reason=reason)
+
+    def unlink(self, from_uri: str, to_uri: str) -> None:
+        """Remove a relation between two resources."""
+        self.client.unlink_resources(from_uri, to_uri)
 
     # ------------------------------------------------------------------
     # Operational knowledge (pitfalls, research ideas, discoveries)

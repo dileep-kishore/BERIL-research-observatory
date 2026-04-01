@@ -53,12 +53,24 @@ def _print_context_item(item: ContextItem, index: int | None = None) -> None:
     print(f"- uri: {item.uri}")
     print(f"- kind: {item.kind}")
     print(f"- tier: {item.tier}")
+    if item.score is not None:
+        print(f"- score: {item.score:.2f}")
+    if item.match_reason:
+        print(f"- match_reason: {item.match_reason}")
+    if item.category:
+        print(f"- category: {item.category}")
+    if item.is_leaf is not None:
+        print(f"- is_leaf: {item.is_leaf}")
     if item.project_ids:
         print(f"- projects: {', '.join(item.project_ids)}")
     if item.tags:
         print(f"- tags: {', '.join(item.tags)}")
     if item.source_type == "memory":
         print("- source: memory")
+    if item.related:
+        print("- related:")
+        for rel in item.related:
+            print(f"    {rel.uri} ({rel.reason})")
     print()
     print(item.content)
     print()
@@ -108,6 +120,10 @@ def _print_items(items: list[ContextItem], heading: str) -> None:
 def _handle_search(args) -> int:
     tier = Tier(args.tier)
     scope = Scope(args.scope) if args.scope else Scope.all
+    session_id = getattr(args, "session", None)
+    # Auto-resume persisted session if --session flag given without value
+    if session_id is None and hasattr(args, "session") and args.session is None:
+        session_id = DELIVERY.resume_session()
     results = DELIVERY.search(
         args.topic,
         tier=tier,
@@ -116,8 +132,11 @@ def _handle_search(args) -> int:
         project=args.project,
         with_memory=args.with_memory,
         limit=args.limit,
-        session_id=getattr(args, "session", None),
+        session_id=session_id,
     )
+    if results.session_id:
+        print(f"(session: {results.session_id})")
+        print()
     _print_search_results(results)
     return 0
 
@@ -376,6 +395,111 @@ def _handle_ingest_entity(args) -> int:
     return 0
 
 
+def _handle_session(args) -> int:
+    action = args.action
+    if action == "start":
+        sid = DELIVERY.start_session()
+        print(f"Session started: {sid}")
+        print("Subsequent --session searches will use this session.")
+        return 0
+    elif action == "status":
+        sid = DELIVERY.resume_session()
+        if not sid:
+            print("No active session.")
+            return 1
+        try:
+            info = DELIVERY.session_status(sid)
+            print(f"Session: {sid}")
+            for k, v in info.items():
+                if k != "session_id":
+                    print(f"  {k}: {v}")
+        except Exception:
+            print(f"Session: {sid} (status unavailable)")
+        return 0
+    elif action == "commit":
+        try:
+            result = DELIVERY.commit_session()
+            print("Session committed.")
+            task_id = result.get("task_id")
+            if task_id:
+                print(f"Background task: {task_id}")
+        except LookupError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    elif action == "clear":
+        from pathlib import Path
+        p = Path(".beril-session")
+        if p.exists():
+            p.unlink()
+            print("Session cleared.")
+        else:
+            print("No active session.")
+        return 0
+    return 1
+
+
+def _handle_link(args) -> int:
+    DELIVERY.link(args.from_uri, [args.to_uri], reason=args.reason or "")
+    print(f"Linked: {args.from_uri} -> {args.to_uri}")
+    return 0
+
+
+def _handle_unlink(args) -> int:
+    DELIVERY.unlink(args.from_uri, args.to_uri)
+    print(f"Unlinked: {args.from_uri} -> {args.to_uri}")
+    return 0
+
+
+def _handle_stat(args) -> int:
+    info = DELIVERY.client.stat_resource(args.uri)
+    print(f"## {args.uri}")
+    for k, v in sorted(info.items()):
+        print(f"  {k}: {v}")
+    return 0
+
+
+def _handle_drill(args) -> int:
+    from observatory_context.models import Tier as T
+
+    # Step 1: Search at L0
+    depth = args.depth or "L0"
+    tier = T(depth)
+
+    if args.pick:
+        # Direct mode: search, pick Nth result, show at requested depth
+        results = DELIVERY.search(args.query, tier=tier, limit=max(args.pick, 10))
+        if args.pick > len(results.items):
+            print(f"Only {len(results.items)} results found.", file=sys.stderr)
+            return 1
+        item = results.items[args.pick - 1]
+        _print_context_item(item, index=args.pick)
+        return 0
+
+    # Default: show L0 abstracts for top matches
+    results = DELIVERY.search(args.query, tier=T.L0, limit=args.limit)
+    if not results.items:
+        print("No results found.")
+        return 0
+
+    print(f'Drill results for "{args.query}" ({len(results.items)} matches)')
+    print("=" * 60)
+    print()
+    for i, item in enumerate(results.items, 1):
+        score_str = f" (score: {item.score:.2f})" if item.score is not None else ""
+        print(f"  {i}. {item.title}{score_str}")
+        if item.match_reason:
+            print(f"     {item.match_reason}")
+        # Show abstract content (L0)
+        abstract = item.content.strip()
+        if abstract:
+            print(f"     {abstract[:200]}")
+        print()
+
+    print("Use --pick N --depth L1|L2 to drill deeper into a result.")
+    return 0
+
+
 _HANDLERS = {
     "search": _handle_search,
     "figures": _handle_figures,
@@ -402,6 +526,11 @@ _HANDLERS = {
     "update-idea": _handle_update_idea,
     "discoveries": _handle_discoveries,
     "add-discovery": _handle_add_discovery,
+    "session": _handle_session,
+    "link": _handle_link,
+    "unlink": _handle_unlink,
+    "stat": _handle_stat,
+    "drill": _handle_drill,
 }
 
 
@@ -549,6 +678,41 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("id", help="Entity identifier slug")
     p_ingest.add_argument("--profile-json", required=True, help="Profile data as JSON string")
     p_ingest.add_argument("--relations-json", default=None, help="Relations as JSON array string")
+
+    # -- Session management --
+
+    p_session = sub.add_parser("session", help="Manage OpenViking sessions")
+    p_session.add_argument(
+        "action", choices=["start", "status", "commit", "clear"],
+        help="Session action",
+    )
+
+    # -- Relation management --
+
+    p_link = sub.add_parser("link", help="Create a relation between resources")
+    p_link.add_argument("from_uri", help="Source resource URI")
+    p_link.add_argument("to_uri", help="Target resource URI")
+    p_link.add_argument("--reason", default=None, help="Reason for the relation")
+
+    p_unlink = sub.add_parser("unlink", help="Remove a relation between resources")
+    p_unlink.add_argument("from_uri", help="Source resource URI")
+    p_unlink.add_argument("to_uri", help="Target resource URI")
+
+    # -- Resource inspection --
+
+    p_stat = sub.add_parser("stat", help="Show resource metadata")
+    p_stat.add_argument("uri", help="Resource URI to inspect")
+
+    # -- Progressive drill-down --
+
+    p_drill = sub.add_parser("drill", help="Progressive L0->L1->L2 drill-down")
+    p_drill.add_argument("query", help="Search query")
+    p_drill.add_argument("--pick", type=int, default=None, help="Pick Nth result")
+    p_drill.add_argument(
+        "--depth", choices=["L0", "L1", "L2"], default=None,
+        help="Detail level (default: L0 for listing, L2 for --pick)",
+    )
+    p_drill.add_argument("--limit", type=int, default=10, help="Max results")
 
     return parser
 

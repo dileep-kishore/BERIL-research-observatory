@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,6 +26,7 @@ from rich.table import Table
 from observatory_context.client import OpenVikingObservatoryClient
 from observatory_context.config import ObservatoryContextSettings
 from observatory_context.ingest import build_resource_manifest
+from observatory_context.staging import write_staged_file
 from observatory_context.uris import (
     _ENTITY_TYPE_PLURALS,
     _ROOT,
@@ -131,16 +131,6 @@ class _ExtractionCache:
 # ------------------------------------------------------------------
 
 
-def _write_file(base: Path, rel_path: str, content: str, metadata: dict | None = None) -> None:
-    dest = base / rel_path
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("w", encoding="utf-8") as fh:
-        if metadata:
-            fh.write("---\n")
-            fh.write(yaml.safe_dump(metadata, sort_keys=True))
-            fh.write("---\n\n")
-        fh.write(content)
-
 
 # ------------------------------------------------------------------
 # Deduplicating collector
@@ -218,10 +208,10 @@ class _KnowledgeGraphCollector:
             evidence = "\n".join(mh.evidence_parts)
             content = f"claim: {mh.claim}\nstatus: {mh.status}\nevidence_delta: {evidence}\n"
             metadata = {"title": mh.claim[:80], "kind": "hypothesis", "status": mh.status, "project_ids": mh.projects}
-            _write_file(base, f"hypotheses/{mh.hyp_id}/hypothesis.yaml", content, metadata)
+            write_staged_file(base, f"hypotheses/{mh.hyp_id}/hypothesis.yaml", content, metadata)
 
         for filename, (content, metadata) in self.timeline_events.items():
-            _write_file(base, f"timeline/{filename}", content, metadata)
+            write_staged_file(base, f"timeline/{filename}", content, metadata)
 
         return list(self.entities.values())
 
@@ -231,7 +221,7 @@ class _KnowledgeGraphCollector:
         entity_dir = f"entities/{plural}/{me.entity_id}"
 
         profile = {"name": me.name, "type": me.entity_type, "projects": me.projects, **me.metadata}
-        _write_file(
+        write_staged_file(
             base, f"{entity_dir}/profile.yaml",
             yaml.safe_dump(profile, sort_keys=True),
             metadata={"title": me.name, "kind": "entity",
@@ -239,7 +229,7 @@ class _KnowledgeGraphCollector:
         )
 
         for rel_key, rel in me.relations.items():
-            _write_file(
+            write_staged_file(
                 base, f"{entity_dir}/relations/{rel_key}.yaml",
                 yaml.safe_dump(rel, sort_keys=True),
                 metadata={"kind": "relation"},
@@ -259,7 +249,7 @@ class _KnowledgeGraphCollector:
                     "evidence": rel.get("evidence", ""),
                     "confidence": rel.get("confidence", "moderate"),
                 }
-                _write_file(
+                write_staged_file(
                     base, f"entities/{obj_plural}/{obj_id}/relations/{inv_key}.yaml",
                     yaml.safe_dump(inverse_rel, sort_keys=True),
                     metadata={"kind": "relation"},
@@ -293,20 +283,20 @@ def _stage_rollup_tiers(
 
         progress.update(task_id, description=f"Tiers: entities/{plural}")
         abstract = extractor.generate_abstract(content)
-        _write_file(base, f"entities/{plural}/.abstract.md", abstract,
+        write_staged_file(base, f"entities/{plural}/.abstract.md", abstract,
                      {"title": f"{plural} abstract", "kind": "tier_summary"})
         progress.advance(task_id)
         overview = extractor.generate_overview(content)
-        _write_file(base, f"entities/{plural}/.overview.md", overview,
+        write_staged_file(base, f"entities/{plural}/.overview.md", overview,
                      {"title": f"{plural} overview", "kind": "tier_summary"})
         progress.advance(task_id)
 
     progress.update(task_id, description="Tiers: entities/")
     entities_content = f"# All entities\n\n{len(all_entities)} entities across {len(type_summaries)} types.\n\n" + "\n".join(all_lines)
-    _write_file(base, "entities/.abstract.md", extractor.generate_abstract(entities_content),
+    write_staged_file(base, "entities/.abstract.md", extractor.generate_abstract(entities_content),
                  {"title": "entities abstract", "kind": "tier_summary"})
     progress.advance(task_id)
-    _write_file(base, "entities/.overview.md", extractor.generate_overview(entities_content),
+    write_staged_file(base, "entities/.overview.md", extractor.generate_overview(entities_content),
                  {"title": "entities overview", "kind": "tier_summary"})
     progress.advance(task_id)
 
@@ -316,19 +306,19 @@ def _stage_rollup_tiers(
         f"{len(all_entities)} entities, {len(type_summaries)} entity types.\n\n"
         f"Entity types: {', '.join(sorted(type_summaries.keys()))}"
     )
-    _write_file(base, ".abstract.md", extractor.generate_abstract(kg_content),
+    write_staged_file(base, ".abstract.md", extractor.generate_abstract(kg_content),
                  {"title": "knowledge-graph abstract", "kind": "tier_summary"})
     progress.advance(task_id)
-    _write_file(base, ".overview.md", extractor.generate_overview(kg_content),
+    write_staged_file(base, ".overview.md", extractor.generate_overview(kg_content),
                  {"title": "knowledge-graph overview", "kind": "tier_summary"})
     progress.advance(task_id)
 
     progress.update(task_id, description="Tiers: hypotheses/")
-    _write_file(base, "hypotheses/.abstract.md",
+    write_staged_file(base, "hypotheses/.abstract.md",
                  extractor.generate_abstract("Hypotheses extracted from observatory project reports."),
                  {"title": "hypotheses abstract", "kind": "tier_summary"})
     progress.advance(task_id)
-    _write_file(base, "hypotheses/.overview.md",
+    write_staged_file(base, "hypotheses/.overview.md",
                  extractor.generate_overview("Hypotheses extracted from observatory project reports."),
                  {"title": "hypotheses overview", "kind": "tier_summary"})
     progress.advance(task_id)
@@ -483,7 +473,7 @@ def _rebuild_knowledge_graph(
         cache.clear()
         with console.status("[bold]Deleting existing knowledge graph..."):
             try:
-                client.client.rm(_KG_URI, recursive=True)
+                client.rm(_KG_URI, recursive=True)
                 console.print(f"  Deleted [bold]{_KG_URI}[/]")
             except Exception as exc:
                 if "NotFound" in type(exc).__name__ or "NotFound" in str(exc):
@@ -612,14 +602,14 @@ def _rebuild_knowledge_graph(
             except (TimeoutError, Exception):
                 pass  # best effort
             try:
-                client.client.rm(_KG_URI, recursive=True)
+                client.rm(_KG_URI, recursive=True)
             except Exception as exc:
                 if "NotFound" not in type(exc).__name__ and "NotFound" not in str(exc):
                     console.print(f"[yellow]Warning: could not delete old graph: {exc}[/]")
 
         # Single batch upload
         with console.status("[bold]Uploading knowledge graph to OpenViking..."):
-            result = client.client.add_resource(
+            result = client.batch_add(
                 path=str(staging_dir),
                 to=_KG_URI,
                 reason="Knowledge graph rebuild (batch)",
@@ -684,14 +674,14 @@ def _batch_upload_resources(
                 else:
                     content = source_path.read_text(encoding="utf-8")
 
-                _write_file(staging_dir, rel_uri, content, metadata=item.metadata)
+                write_staged_file(staging_dir, rel_uri, content, metadata=item.metadata)
                 progress.advance(task)
 
         file_count = sum(1 for f in staging_dir.rglob("*") if f.is_file())
         console.print(f"  Staged [bold]{file_count}[/] files, skipped [dim]{skipped}[/] existing")
 
         with console.status("[bold]Uploading resource batch to OpenViking..."):
-            result = client.client.add_resource(
+            result = client.batch_add(
                 path=str(staging_dir),
                 to=_ROOT,
                 reason="Batch ingest Phase 1 resources",

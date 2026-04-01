@@ -162,6 +162,26 @@ class OpenVikingObservatoryClient:
         finally:
             temp_path.unlink(missing_ok=True)
 
+    def rm(self, uri: str, recursive: bool = False) -> None:
+        """Remove a resource or directory."""
+        self.client.rm(uri, recursive=recursive)
+
+    def unlink_resources(self, from_uri: str, to_uri: str) -> None:
+        """Remove a relation between two resources."""
+        self.client.unlink(from_uri, to_uri)
+
+    def batch_add(self, path: str, to: str, reason: str, wait: bool = False) -> dict[str, Any]:
+        """Upload a local directory tree as a batch to a target URI."""
+        return self.client.add_resource(path=path, to=to, reason=reason, wait=wait)
+
+    def create_session(self) -> Any:
+        """Create a new OpenViking session object."""
+        return self.client.session()
+
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
+        """Poll a background task by ID."""
+        return self.client.get_task(task_id)
+
     def add_manifest_resource(self, item: ResourceManifestItem, wait: bool = True) -> dict[str, Any]:
         source_path = Path(item.source_path)
         if item.kind == "figure":

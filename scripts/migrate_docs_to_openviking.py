@@ -24,9 +24,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-import yaml
-
 from observatory_context._text import slugify
+from observatory_context.staging import write_staged_file
 from observatory_context.uris import _OPERATIONAL_COLLECTIONS, _ROOT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -36,17 +35,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Staging helpers (same pattern as viking_ingest.py)
 # ---------------------------------------------------------------------------
 
-
-def _write_file(base: Path, rel_path: str, content: str, metadata: dict | None = None) -> None:
-    """Stage a file with optional YAML frontmatter."""
-    dest = base / rel_path
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("w", encoding="utf-8") as fh:
-        if metadata:
-            fh.write("---\n")
-            fh.write(yaml.safe_dump(metadata, sort_keys=True))
-            fh.write("---\n\n")
-        fh.write(content)
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +262,7 @@ def _stage_entries(
         metadata.setdefault("title", title)
         metadata.setdefault("kind", collection)
 
-        _write_file(staging_dir, rel_path, markdown, metadata=metadata)
+        write_staged_file(staging_dir, rel_path, markdown, metadata=metadata)
         print(f"  [{i}/{total}] {rel_path}", flush=True)
         count += 1
 
@@ -294,7 +282,7 @@ def _stage_overview(
     try:
         overview_md = extractor.generate_collection_overview(collection, summaries)
         meta = {"title": f"{collection.replace('_', ' ').title()} Overview", "kind": "overview"}
-        _write_file(staging_dir, f"{dir_name}/_overview.md", overview_md, metadata=meta)
+        write_staged_file(staging_dir, f"{dir_name}/_overview.md", overview_md, metadata=meta)
         return True
     except Exception as exc:
         print(f"  Overview generation failed: {exc}", file=sys.stderr, flush=True)
@@ -394,7 +382,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # Batch upload to OpenViking
         print("Uploading batch to OpenViking...", flush=True)
-        delivery.client.client.add_resource(
+        delivery.client.batch_add(
             path=str(staging_dir),
             to=_ROOT,
             reason="Batch ingest operational knowledge (pitfalls, ideas, discoveries)",
