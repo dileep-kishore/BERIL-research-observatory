@@ -1,11 +1,10 @@
 """Tests for ContextDelivery session-aware search."""
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
 from observatory_context.delivery import ContextDelivery
-from observatory_context.models import Scope, Tier
 
 
 @pytest.fixture()

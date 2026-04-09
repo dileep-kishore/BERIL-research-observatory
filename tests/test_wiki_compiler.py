@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import yaml
 
-from observatory_context.registry.schema import EntityRef, Finding, Hypothesis
+from observatory_context.registry.schema import Finding, Hypothesis
 from observatory_context.wiki.compiler import (
     compile_entity_page,
     compile_hypothesis_page,

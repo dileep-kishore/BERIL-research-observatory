@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from observatory_context.uris import (
     build_corpus_uri,
