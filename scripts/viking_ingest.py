@@ -375,6 +375,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--clean", action=argparse.BooleanOptionalAction, default=False,
         help="Delete existing knowledge graph and extraction cache before rebuilding.",
     )
+    parser.add_argument(
+        "--v2", action="store_true",
+        help="Use the V2 IngestPipeline (4-phase: corpus, registry, wiki, log).",
+    )
     return parser
 
 
@@ -756,6 +760,42 @@ def main(argv: list[str] | None = None) -> int:
         console.rule("Re-checking")
         still_missing = _check_manifest(client, manifest)
         return 1 if still_missing else 0
+
+    # V2 pipeline path
+    if args.v2:
+        from observatory_context.ingest.pipeline import IngestPipeline
+
+        pipeline = IngestPipeline(client=client, repo_root=REPO_ROOT)
+        extractor = None
+        if not args.graph_only:
+            settings = ObservatoryContextSettings()
+            if settings.cborg_api_key:
+                from observatory_context.extraction import CBORGExtractor
+
+                model = args.model or settings.cborg_model
+                model_limits = _fetch_model_limits(settings.cborg_api_key, model)
+                extractor = CBORGExtractor(
+                    api_url=settings.cborg_api_url,
+                    model=model,
+                    api_key=settings.cborg_api_key,
+                    max_input_tokens=model_limits.get("max_input_tokens"),
+                    max_output_tokens=model_limits.get("max_output_tokens"),
+                )
+        results = pipeline.run(
+            project_ids=args.project or None,
+            resume=not args.no_resume if hasattr(args, "no_resume") else args.resume,
+            extractor=extractor,
+        )
+        console.print(f"\n[bold]Pipeline results:[/] {results}")
+
+        if args.wait and not args.dry_run:
+            with console.status("[bold]Waiting for OpenViking to finish processing..."):
+                try:
+                    client.wait_until_processed(timeout=args.wait_timeout)
+                except TimeoutError as exc:
+                    console.print(f"[yellow]Warning: {exc}[/]")
+            console.print("[green]All resources processed.[/]")
+        return 0
 
     # Phase 1: Resource upload (skip if --graph-only)
     if not args.graph_only:
