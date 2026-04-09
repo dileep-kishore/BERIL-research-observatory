@@ -459,6 +459,86 @@ def _handle_stat(args) -> int:
     return 0
 
 
+def _handle_wiki_index(args) -> int:
+    """Show the wiki master index."""
+    from observatory_context.uris import build_wiki_index_uri
+
+    try:
+        content = DELIVERY.client.read_resource(build_wiki_index_uri())
+        print(content)
+    except Exception:
+        print("Wiki index not found. Run ingest with --v2 to generate it.")
+    return 0
+
+
+def _handle_wiki_topic(args) -> int:
+    """Show a wiki topic synthesis page."""
+    from observatory_context.uris import build_wiki_topic_uri
+
+    uri = build_wiki_topic_uri(args.slug)
+    try:
+        content = DELIVERY.client.read_resource(uri)
+        print(content)
+    except Exception:
+        print(f"Topic page not found: {args.slug}")
+    return 0
+
+
+def _handle_wiki_lint(args) -> int:
+    """Run wiki lint checks and print gap report."""
+    from observatory_context.registry.store import RegistryStore
+    from observatory_context.wiki.lint import (
+        build_gap_report,
+        detect_low_coverage_topics,
+        detect_orphan_ideas,
+        detect_untested_hypotheses,
+    )
+
+    store = RegistryStore(DELIVERY.client)
+
+    try:
+        hypotheses = store.list_hypotheses()
+    except Exception:
+        hypotheses = []
+
+    try:
+        findings = store.list_findings()
+    except Exception:
+        findings = []
+
+    # Load ideas from the registry store; fall back to empty list if unavailable
+    try:
+        from observatory_context.uris import build_registry_uri
+        import yaml
+
+        idea_entries = DELIVERY.client.list_resources(f"{build_registry_uri()}/ideas")
+        from observatory_context.registry.schema import ResearchIdea
+
+        ideas = []
+        for entry in idea_entries:
+            uri = entry["uri"] if isinstance(entry, dict) else entry.uri
+            content = DELIVERY.client.read_resource(uri)
+            ideas.append(ResearchIdea.model_validate(yaml.safe_load(content)))
+    except Exception:
+        ideas = []
+
+    # Group findings by topic (use related_entities as proxy for topic)
+    findings_by_topic: dict[str, list] = {}
+    for f in findings:
+        topics = [e.entity_id for e in f.related_entities] if f.related_entities else ["uncategorised"]
+        for topic in topics:
+            findings_by_topic.setdefault(topic, []).append(f)
+
+    issues = (
+        detect_untested_hypotheses(hypotheses)
+        + detect_orphan_ideas(ideas)
+        + detect_low_coverage_topics(findings_by_topic)
+    )
+
+    print(build_gap_report(issues))
+    return 0
+
+
 def _handle_drill(args) -> int:
     from observatory_context.models import Tier as T
 
@@ -531,6 +611,9 @@ _HANDLERS = {
     "unlink": _handle_unlink,
     "stat": _handle_stat,
     "drill": _handle_drill,
+    "wiki-index": _handle_wiki_index,
+    "wiki-topic": _handle_wiki_topic,
+    "wiki-lint": _handle_wiki_lint,
 }
 
 
@@ -713,6 +796,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Detail level (default: L0 for listing, L2 for --pick)",
     )
     p_drill.add_argument("--limit", type=int, default=10, help="Max results")
+
+    # -- Wiki subcommands --
+
+    sub.add_parser("wiki-index", help="Show the wiki master index")
+
+    p_wiki_topic = sub.add_parser("wiki-topic", help="Show a wiki topic synthesis page")
+    p_wiki_topic.add_argument("slug", help="Topic slug (e.g. sulfur-oxidation)")
+
+    sub.add_parser("wiki-lint", help="Run wiki lint checks and print gap report")
 
     return parser
 
