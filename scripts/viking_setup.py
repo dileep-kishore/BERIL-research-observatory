@@ -96,8 +96,9 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
             "model": vlm_model,
         },
         "rerank": {
-            "provider": provider,
+            "api_base": api_base,
             "api_key": api_key,
+            "provider": provider,
             "model": os.environ.get("OPENVIKING_RERANK_MODEL", "gpt-4o-mini"),
         },
     }
