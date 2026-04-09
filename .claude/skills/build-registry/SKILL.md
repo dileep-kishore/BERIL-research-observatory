@@ -46,7 +46,25 @@ uv run scripts/viking_ingest.py --graph-only --wait
 
 This is the fastest option when project resources are already uploaded and only the graph needs updating (e.g., after editing a REPORT.md).
 
-### Full Rebuild from Scratch
+### V2 Pipeline (Wiki-Based Architecture)
+
+For the new wiki-based architecture, use the `--v2` flag:
+
+```bash
+uv run scripts/viking_ingest.py --v2 --wait
+```
+
+This runs the full 4-phase pipeline:
+1. **Corpus** — upload project resources (README, REPORT, provenance, figures)
+2. **Registry** — extract knowledge graph via CBORG (entities, hypotheses, relations)
+3. **Wiki** — compile topic pages from the registry into a browsable wiki
+4. **Log** — record ingest provenance and update change log
+
+Requires both `CBORG_API_KEY` (registry extraction and wiki compilation) and `OPENAI_API_KEY` (embeddings).
+
+Use `--v2` for new installations or after migrating from the legacy graph-only pipeline. The legacy `--rebuild-graph` path remains supported for existing setups.
+
+### Full Rebuild from Scratch (Legacy)
 
 ```bash
 uv run scripts/viking_ingest.py --no-resume --rebuild-graph --clean --wait

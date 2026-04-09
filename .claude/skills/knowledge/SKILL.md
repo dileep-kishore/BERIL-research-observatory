@@ -33,6 +33,9 @@ Search the observatory's knowledge via OpenViking. OpenViking must be running fo
 /knowledge pitfalls [topic]                  — list/search pitfalls
 /knowledge discoveries [topic]               — list/search discoveries
 /knowledge ideas [--status STATUS]           — list/search research ideas
+/knowledge wiki-index                        — list all compiled wiki topic pages
+/knowledge wiki-topic <slug>                 — read a compiled wiki topic page by slug
+/knowledge wiki-lint                         — check wiki for coverage gaps and stale topics
 ```
 
 ### Optional Flags
@@ -50,7 +53,7 @@ Example with flags before subcommand:
 uv run scripts/query_knowledge_unified.py --tier L1 browse viking://resources/observatory/projects/
 ```
 
-Subcommands not listed above (`project`, `landscape`, `gaps`, `timeline`, `hypotheses`, `related`, `grep`, `glob`, `recall`, `remember`, `ingest-entity`, `pitfalls`, `discoveries`, `ideas`) ignore these flags.
+Subcommands not listed above (`project`, `landscape`, `gaps`, `timeline`, `hypotheses`, `related`, `grep`, `glob`, `recall`, `remember`, `ingest-entity`, `pitfalls`, `discoveries`, `ideas`, `wiki-index`, `wiki-topic`, `wiki-lint`) ignore these flags.
 
 ## Prerequisites
 
@@ -96,6 +99,9 @@ Map subcommands directly:
 - `/knowledge discoveries <topic>` → `discoveries "<topic>"`
 - `/knowledge ideas` → `ideas`
 - `/knowledge ideas --status <status>` → `ideas --status <status>`
+- `/knowledge wiki-index` → `wiki-index`
+- `/knowledge wiki-topic <slug>` → `wiki-topic <slug>`
+- `/knowledge wiki-lint` → `wiki-lint`
 
 A bare argument (no subcommand) is treated as `search` for backward compatibility:
 ```bash
@@ -311,6 +317,39 @@ Run: `uv run scripts/query_knowledge_unified.py ideas [--status STATUS]`
 Optional `--status` filter: `PROPOSED`, `IN_PROGRESS`, `COMPLETED`.
 
 Output: numbered list of research ideas with title, status, priority, and research question.
+
+### Subcommand: `/knowledge wiki-index`
+
+**List all compiled wiki topic pages.**
+Run: `uv run scripts/query_knowledge_unified.py wiki-index`
+
+Output: table of wiki topic slugs with title and last-compiled timestamp. Use this to discover what topic pages exist before calling `wiki-topic`.
+
+### Subcommand: `/knowledge wiki-topic <slug>`
+
+**Read a compiled wiki topic page by slug.**
+Run: `uv run scripts/query_knowledge_unified.py wiki-topic <slug>`
+
+`<slug>` is a topic identifier returned by `wiki-index` (e.g., `pangenome-openness`, `fitness-landscape`).
+
+Output: full compiled topic page — synthesized narrative, key findings, entity coverage, and cross-project links.
+
+### Subcommand: `/knowledge wiki-lint`
+
+**Check the wiki for coverage gaps and stale topics.**
+Run: `uv run scripts/query_knowledge_unified.py wiki-lint`
+
+Output: list of projects or entities not yet covered by any wiki topic page, topics that have not been recompiled since their source projects changed, and recommended slugs to (re)compile.
+
+---
+
+### Wiki-First Navigation Guidance
+
+For broad topic questions ("what do we know about X", "give me an overview of Y"), prefer the wiki workflow over raw search:
+
+1. Run `wiki-index` to see compiled topic pages.
+2. Read the relevant topic with `wiki-topic <slug>`.
+3. Fall back to `search` only when wiki coverage is low (i.e., the topic does not appear in the index or `wiki-lint` flags it as stale).
 
 ## Integration
 

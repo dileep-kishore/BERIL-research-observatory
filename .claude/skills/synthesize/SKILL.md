@@ -254,6 +254,18 @@ uv run scripts/viking_ingest.py --graph-only --wait
 
 This is incremental — only projects whose REPORT.md or provenance.yaml changed since last extraction are re-extracted via CBORG. Cached results are used for all other projects. The entire merged graph is re-uploaded atomically.
 
+**V2 architecture note**: If the observatory is running the wiki-based V2 pipeline, prefer checking for gaps and reading compiled syntheses over running graph rebuilds manually:
+
+```bash
+# Check what's missing or stale in the wiki
+uv run scripts/query_knowledge_unified.py wiki-lint
+
+# Read an existing compiled synthesis for a topic
+uv run scripts/query_knowledge_unified.py wiki-topic <slug>
+```
+
+Use `--graph-only` (above) to trigger incremental re-extraction after writing new REPORT.md content. The V2 wiki pages will be recompiled on the next full `--v2` ingest run.
+
 If the script fails, print `WARN  Knowledge graph update failed (non-blocking)` and continue.
 
 **Verify** the project appears in the graph after ingest:

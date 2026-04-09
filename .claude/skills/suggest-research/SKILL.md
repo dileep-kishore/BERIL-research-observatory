@@ -19,6 +19,26 @@ No arguments required. The skill reads the full project landscape automatically.
 
 ## Workflow
 
+### Step 0: Wiki-First Orientation (V2 Architecture)
+
+Before querying individual records, get a high-level orientation via the wiki:
+
+```bash
+# Check for coverage gaps and stale topics
+uv run scripts/query_knowledge_unified.py wiki-lint
+
+# List compiled topic pages to see what syntheses already exist
+uv run scripts/query_knowledge_unified.py wiki-index
+```
+
+For any topic that appears in the wiki index, read the compiled synthesis before diving into raw search:
+
+```bash
+uv run scripts/query_knowledge_unified.py wiki-topic <slug>
+```
+
+Use `wiki-lint` output directly in Step 6 under "Recurring gaps" — it surfaces topics not yet covered by any wiki page and topics flagged as stale. Fall back to `search` only when wiki coverage is low.
+
 ### Step 1: Read the Research Idea Backlog
 
 Query OpenViking for existing research ideas:
