@@ -138,3 +138,92 @@ def build_memory_uri(store: str, slug: str | None = None) -> str:
     else:
         path = PurePosixPath("memories", _normalize_segment(store_dir), _normalize_segment(slug))
     return f"{_ROOT}/{path.as_posix()}"
+
+
+# ---------------------------------------------------------------------------
+# V2 URI builders — corpus/, wiki/, registry/ namespaces
+# ---------------------------------------------------------------------------
+
+
+def build_corpus_uri(project_id: str, file_path: str | None = None) -> str:
+    if file_path is None:
+        path = PurePosixPath("corpus", _normalize_segment(project_id))
+    else:
+        path = PurePosixPath("corpus", _normalize_segment(project_id), _normalize_segment(file_path))
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_wiki_uri() -> str:
+    return f"{_ROOT}/wiki"
+
+
+def build_wiki_index_uri() -> str:
+    return f"{_ROOT}/wiki/index.md"
+
+
+def build_wiki_log_uri() -> str:
+    return f"{_ROOT}/wiki/log.md"
+
+
+def build_wiki_topic_uri(slug: str) -> str:
+    path = PurePosixPath("wiki", "topics", f"{_normalize_segment(slug)}.md")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_wiki_entity_uri(entity_type: str, slug: str) -> str:
+    plural = _ENTITY_TYPE_PLURALS[entity_type]
+    path = PurePosixPath("wiki", "entities", plural, f"{_normalize_segment(slug)}.md")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_wiki_hypothesis_uri(hypothesis_id: str) -> str:
+    path = PurePosixPath("wiki", "hypotheses", f"{_normalize_segment(hypothesis_id)}.md")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_wiki_gaps_uri() -> str:
+    return f"{_ROOT}/wiki/gaps/latest.md"
+
+
+def build_registry_uri() -> str:
+    return f"{_ROOT}/registry"
+
+
+def build_registry_project_uri(project_id: str) -> str:
+    path = PurePosixPath("registry", "projects", f"{_normalize_segment(project_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_finding_uri(finding_id: str) -> str:
+    path = PurePosixPath("registry", "findings", f"{_normalize_segment(finding_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_hypothesis_uri(hypothesis_id: str) -> str:
+    path = PurePosixPath("registry", "hypotheses", f"{_normalize_segment(hypothesis_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_evidence_uri(evidence_id: str) -> str:
+    path = PurePosixPath("registry", "evidence", f"{_normalize_segment(evidence_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_artifact_uri(artifact_id: str) -> str:
+    path = PurePosixPath("registry", "artifacts", f"{_normalize_segment(artifact_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_figure_uri(figure_id: str) -> str:
+    path = PurePosixPath("registry", "figures", f"{_normalize_segment(figure_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_pitfall_uri(pitfall_id: str) -> str:
+    path = PurePosixPath("registry", "pitfalls", f"{_normalize_segment(pitfall_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_idea_uri(idea_id: str) -> str:
+    path = PurePosixPath("registry", "ideas", f"{_normalize_segment(idea_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"
