@@ -23,6 +23,9 @@ class Scope(StrEnum):
     resources = "resources"
     memory = "memory"
     graph = "graph"
+    wiki = "wiki"
+    registry = "registry"
+    corpus = "corpus"
 
 
 class MemoryStore(StrEnum):

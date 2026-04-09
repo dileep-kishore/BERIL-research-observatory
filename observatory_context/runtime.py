@@ -11,6 +11,8 @@ from observatory_context.service import ObservatoryContextService
 
 if TYPE_CHECKING:
     from observatory_context.delivery import ContextDelivery
+    from observatory_context.ingest.pipeline import IngestPipeline
+    from observatory_context.registry.store import RegistryStore
 
 
 def build_client(
@@ -66,3 +68,30 @@ def build_service(
     if require_live and not resolved_client.health():
         raise RuntimeError("OpenViking server is not reachable")
     return ObservatoryContextService(repo_root=repo_root, client=resolved_client)
+
+
+def build_registry_store(
+    client: OpenVikingObservatoryClient | None = None,
+) -> "RegistryStore":
+    """Build a RegistryStore instance."""
+    from observatory_context.registry.store import RegistryStore
+
+    if client is None:
+        settings = ObservatoryContextSettings()
+        client = build_client(settings)
+    return RegistryStore(client=client)
+
+
+def build_ingest_pipeline(
+    repo_root: Path | None = None,
+    client: OpenVikingObservatoryClient | None = None,
+) -> "IngestPipeline":
+    """Build an IngestPipeline instance."""
+    from observatory_context.ingest.pipeline import IngestPipeline
+
+    if client is None:
+        settings = ObservatoryContextSettings()
+        client = build_client(settings)
+    if repo_root is None:
+        repo_root = Path.cwd()
+    return IngestPipeline(client=client, repo_root=repo_root)
