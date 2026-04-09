@@ -19,11 +19,7 @@ from observatory_context.registry.schema import Finding, Hypothesis
 from observatory_context.uris import (
     build_corpus_uri,
     build_registry_uri,
-    build_wiki_entity_uri,
-    build_wiki_hypothesis_uri,
-    build_wiki_index_uri,
     build_wiki_log_uri,
-    build_wiki_topic_uri,
     build_wiki_uri,
 )
 from observatory_context.wiki.compiler import (
