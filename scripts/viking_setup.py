@@ -74,12 +74,18 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
             "in your shell or .env, then rerun `uv run scripts/viking_setup.py --write-config`."
         )
 
-    # Default to gemini-embedding-001 (MTEB #1, free on CBORG, 3072-dim)
-    default_embed = "gemini-embedding-001" if cborg_key else "text-embedding-3-large"
+    # CBORG: use lbl/nomic-embed-text (free, 768-dim, no dimensions-param issues)
+    # Direct OpenAI: use text-embedding-3-large (3072-dim, best quality)
+    if cborg_key:
+        default_embed = "lbl/nomic-embed-text"
+        default_dim = "768"
+    else:
+        default_embed = "text-embedding-3-large"
+        default_dim = "3072"
     embedding_model = (
         _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_MODEL") or default_embed
     )
-    embedding_dimension_raw = _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_DIMENSION")
+    embedding_dimension_raw = _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_DIMENSION") or default_dim
     vlm_model = _get_setting(env, dotenv, "OPENVIKING_VLM_MODEL") or "gpt-5.4-mini"
 
     dense_config: dict[str, Any] = {
@@ -87,12 +93,8 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
         "api_key": api_key,
         "provider": provider,
         "model": embedding_model,
+        "dimension": int(embedding_dimension_raw),
     }
-    # Only set dimension when explicitly configured — some models (gemini)
-    # reject the dimensions parameter via CBORG/LiteLLM. OpenViking
-    # auto-detects dimension when omitted.
-    if embedding_dimension_raw:
-        dense_config["dimension"] = int(embedding_dimension_raw)
 
     return {
         "server": _load_server_config(config_path, example_path),
