@@ -9,6 +9,15 @@ from tempfile import mkdtemp
 from typing import Any
 
 import yaml
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from observatory_context._text import slugify
 from observatory_context.client import OpenVikingObservatoryClient
@@ -30,6 +39,18 @@ from observatory_context.wiki.compiler import (
 from observatory_context.wiki.index import WikiEntry, build_index_markdown
 
 logger = logging.getLogger(__name__)
+console = Console()
+
+
+def _make_progress() -> Progress:
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    )
 
 
 class IngestPipeline:
@@ -99,19 +120,26 @@ class IngestPipeline:
         corpus_staging.mkdir(parents=True, exist_ok=True)
 
         staged: list[ResourceManifestItem] = []
-        for item in manifest:
-            if resume and self.client.resource_exists(item.uri):
-                continue
-            source = Path(item.source_path)
-            if not source.exists():
-                continue
-            try:
-                content = source.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            rel = source.name
-            self.uploader.stage(corpus_staging, rel, content, metadata=item.metadata)
-            staged.append(item)
+        with _make_progress() as progress:
+            task = progress.add_task("Phase 1: Uploading corpus", total=len(manifest))
+            for item in manifest:
+                progress.update(task, description=f"Phase 1: {Path(item.source_path).name}")
+                if resume and self.client.resource_exists(item.uri):
+                    progress.advance(task)
+                    continue
+                source = Path(item.source_path)
+                if not source.exists():
+                    progress.advance(task)
+                    continue
+                try:
+                    content = source.read_text(encoding="utf-8")
+                except Exception:
+                    progress.advance(task)
+                    continue
+                rel = source.name
+                self.uploader.stage(corpus_staging, rel, content, metadata=item.metadata)
+                staged.append(item)
+                progress.advance(task)
 
         if staged:
             target_uri = build_corpus_uri("_batch")
@@ -122,6 +150,7 @@ class IngestPipeline:
                 wait=False,
             )
 
+        console.print(f"  [green]✓[/] Phase 1: {len(staged)} resources uploaded")
         return len(staged)
 
     def phase2_extract_and_register(
@@ -145,6 +174,7 @@ class IngestPipeline:
             Number of registry entries created.
         """
         if extractor is None:
+            console.print("  [dim]Phase 2: skipped (no extractor)[/]")
             return 0
 
         project_ids = sorted({pid for item in manifest for pid in item.project_ids})
@@ -153,39 +183,45 @@ class IngestPipeline:
 
         all_entries: list[Finding | Hypothesis] = []
 
-        for pid in project_ids:
-            report_path = self.repo_root / "projects" / pid / "REPORT.md"
-            if not report_path.exists():
-                continue
-
-            report_text = report_path.read_text(encoding="utf-8")
-            prov_path = self.repo_root / "projects" / pid / "provenance.yaml"
-            provenance: dict = {}
-            if prov_path.exists():
-                provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
-
-            try:
-                extraction = extractor.extract_knowledge(report_text, provenance)
-            except (ValueError, Exception) as exc:
-                logger.warning("Extraction failed for %s: %s", pid, exc)
-                continue
-
-            entries = extraction_to_registry_entries(extraction, pid)
-            all_entries.extend(entries)
-
-            for entry in entries:
-                if isinstance(entry, Finding):
-                    rel_path = f"findings/{entry.finding_id}.yaml"
-                elif isinstance(entry, Hypothesis):
-                    rel_path = f"hypotheses/{entry.hypothesis_id}.yaml"
-                else:
+        with _make_progress() as progress:
+            task = progress.add_task("Phase 2: Extracting knowledge", total=len(project_ids))
+            for pid in project_ids:
+                progress.update(task, description=f"Phase 2: {pid}")
+                report_path = self.repo_root / "projects" / pid / "REPORT.md"
+                if not report_path.exists():
+                    progress.advance(task)
                     continue
-                content = yaml.dump(
-                    entry.model_dump(exclude_none=True),
-                    default_flow_style=False,
-                    sort_keys=True,
-                )
-                self.uploader.stage(registry_staging, rel_path, content)
+
+                report_text = report_path.read_text(encoding="utf-8")
+                prov_path = self.repo_root / "projects" / pid / "provenance.yaml"
+                provenance: dict = {}
+                if prov_path.exists():
+                    provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
+
+                try:
+                    extraction = extractor.extract_knowledge(report_text, provenance)
+                except (ValueError, Exception) as exc:
+                    logger.warning("Extraction failed for %s: %s", pid, exc)
+                    progress.advance(task)
+                    continue
+
+                entries = extraction_to_registry_entries(extraction, pid)
+                all_entries.extend(entries)
+
+                for entry in entries:
+                    if isinstance(entry, Finding):
+                        rel_path = f"findings/{entry.finding_id}.yaml"
+                    elif isinstance(entry, Hypothesis):
+                        rel_path = f"hypotheses/{entry.hypothesis_id}.yaml"
+                    else:
+                        continue
+                    content = yaml.dump(
+                        entry.model_dump(exclude_none=True),
+                        default_flow_style=False,
+                        sort_keys=True,
+                    )
+                    self.uploader.stage(registry_staging, rel_path, content)
+                progress.advance(task)
 
         if all_entries:
             target_uri = build_registry_uri()
@@ -196,6 +232,7 @@ class IngestPipeline:
                 wait=False,
             )
 
+        console.print(f"  [green]✓[/] Phase 2: {len(all_entries)} registry entries created")
         return len(all_entries)
 
     def phase3_compile_wiki(
@@ -246,6 +283,7 @@ class IngestPipeline:
                 hypotheses = staged_hypotheses
 
         if not findings and not hypotheses:
+            console.print("  [dim]Phase 3: skipped (no registry entries)[/]")
             return 0
 
         wiki_staging = self.staging_root / "wiki"
@@ -274,61 +312,6 @@ class IngestPipeline:
                     entity_projects.setdefault(key, set()).add(pid)
 
         all_entity_keys = set(entity_findings) | set(entity_hypotheses)
-        for entity_type, label in sorted(all_entity_keys):
-            slug = slugify(label)
-            e_findings = entity_findings.get((entity_type, label), [])
-            e_hypotheses = entity_hypotheses.get((entity_type, label), [])
-            e_projects = sorted(entity_projects.get((entity_type, label), set()))
-            content = compile_entity_page(
-                entity_type=entity_type,
-                slug=slug,
-                label=label,
-                findings=e_findings,
-                hypotheses=e_hypotheses,
-                project_ids=e_projects,
-            )
-            from observatory_context.uris import _ENTITY_TYPE_PLURALS
-
-            plural = _ENTITY_TYPE_PLURALS.get(entity_type, f"{entity_type}s")
-            rel_path = f"entities/{plural}/{slug}.md"
-            self.uploader.stage(wiki_staging, rel_path, content)
-            wiki_entries.append(
-                WikiEntry(
-                    slug=slug,
-                    section=f"entities/{plural}",
-                    summary=label,
-                    source_count=len(e_findings),
-                    coverage="high" if len(e_findings) >= 5 else "medium" if len(e_findings) >= 2 else "low",
-                )
-            )
-            page_count += 1
-
-        # --- Hypothesis pages ---
-        for h in hypotheses:
-            slug = slugify(h.hypothesis_id)
-            supporting = [f for f in findings if h.hypothesis_id in (f.evidence_ids or [])]
-            # Also include findings from same projects
-            if not supporting:
-                supporting = [f for f in findings if f.project_id in h.project_ids]
-            content = compile_hypothesis_page(
-                hypothesis=h,
-                supporting_findings=supporting,
-            )
-            rel_path = f"hypotheses/{slug}.md"
-            self.uploader.stage(wiki_staging, rel_path, content)
-            wiki_entries.append(
-                WikiEntry(
-                    slug=slug,
-                    section="hypotheses",
-                    summary=h.statement[:80],
-                    source_count=len(supporting),
-                    coverage="high" if len(supporting) >= 5 else "medium" if len(supporting) >= 2 else "low",
-                )
-            )
-            page_count += 1
-
-        # --- Topic pages ---
-        # Group findings by project_id as a simple topic proxy
         project_findings: dict[str, list[Finding]] = {}
         project_hypotheses: dict[str, list[Hypothesis]] = {}
         for f in findings:
@@ -336,35 +319,104 @@ class IngestPipeline:
         for h in hypotheses:
             for pid in h.project_ids:
                 project_hypotheses.setdefault(pid, []).append(h)
+        topic_ids = sorted(set(project_findings) | set(project_hypotheses))
 
-        for pid in sorted(set(project_findings) | set(project_hypotheses)):
-            slug = slugify(pid)
-            t_findings = project_findings.get(pid, [])
-            t_hypotheses = project_hypotheses.get(pid, [])
-            content = compile_topic_page(
-                slug=slug,
-                title=pid,
-                findings=t_findings,
-                hypotheses=t_hypotheses,
-                project_ids=[pid],
-            )
-            rel_path = f"topics/{slug}.md"
-            self.uploader.stage(wiki_staging, rel_path, content)
-            wiki_entries.append(
-                WikiEntry(
+        # Total pages: entities + hypotheses + topics + index
+        total_pages = len(all_entity_keys) + len(hypotheses) + len(topic_ids) + 1
+
+        with _make_progress() as progress:
+            task = progress.add_task("Phase 3: Compiling wiki", total=total_pages)
+
+            from observatory_context.uris import _ENTITY_TYPE_PLURALS
+
+            for entity_type, label in sorted(all_entity_keys):
+                slug = slugify(label)
+                progress.update(task, description=f"Phase 3: entity/{slug}")
+                e_findings = entity_findings.get((entity_type, label), [])
+                e_hypotheses = entity_hypotheses.get((entity_type, label), [])
+                e_projects = sorted(entity_projects.get((entity_type, label), set()))
+                content = compile_entity_page(
+                    entity_type=entity_type,
                     slug=slug,
-                    section="topics",
-                    summary=f"Findings from {pid}",
-                    source_count=len(t_findings),
-                    coverage="high" if len(t_findings) >= 5 else "medium" if len(t_findings) >= 2 else "low",
+                    label=label,
+                    findings=e_findings,
+                    hypotheses=e_hypotheses,
+                    project_ids=e_projects,
                 )
-            )
-            page_count += 1
+                plural = _ENTITY_TYPE_PLURALS.get(entity_type, f"{entity_type}s")
+                rel_path = f"entities/{plural}/{slug}.md"
+                self.uploader.stage(wiki_staging, rel_path, content)
+                wiki_entries.append(
+                    WikiEntry(
+                        slug=slug,
+                        section=f"entities/{plural}",
+                        summary=label,
+                        source_count=len(e_findings),
+                        coverage="high" if len(e_findings) >= 5 else "medium" if len(e_findings) >= 2 else "low",
+                    )
+                )
+                page_count += 1
+                progress.advance(task)
 
-        # --- Index page ---
-        index_content = build_index_markdown(wiki_entries)
-        self.uploader.stage(wiki_staging, "index.md", index_content)
-        page_count += 1
+            # --- Hypothesis pages ---
+            for h in hypotheses:
+                slug = slugify(h.hypothesis_id)
+                progress.update(task, description=f"Phase 3: hypothesis/{slug}")
+                supporting = [f for f in findings if h.hypothesis_id in (f.evidence_ids or [])]
+                # Also include findings from same projects
+                if not supporting:
+                    supporting = [f for f in findings if f.project_id in h.project_ids]
+                content = compile_hypothesis_page(
+                    hypothesis=h,
+                    supporting_findings=supporting,
+                )
+                rel_path = f"hypotheses/{slug}.md"
+                self.uploader.stage(wiki_staging, rel_path, content)
+                wiki_entries.append(
+                    WikiEntry(
+                        slug=slug,
+                        section="hypotheses",
+                        summary=h.statement[:80],
+                        source_count=len(supporting),
+                        coverage="high" if len(supporting) >= 5 else "medium" if len(supporting) >= 2 else "low",
+                    )
+                )
+                page_count += 1
+                progress.advance(task)
+
+            # --- Topic pages ---
+            for pid in topic_ids:
+                slug = slugify(pid)
+                progress.update(task, description=f"Phase 3: topic/{slug}")
+                t_findings = project_findings.get(pid, [])
+                t_hypotheses = project_hypotheses.get(pid, [])
+                content = compile_topic_page(
+                    slug=slug,
+                    title=pid,
+                    findings=t_findings,
+                    hypotheses=t_hypotheses,
+                    project_ids=[pid],
+                )
+                rel_path = f"topics/{slug}.md"
+                self.uploader.stage(wiki_staging, rel_path, content)
+                wiki_entries.append(
+                    WikiEntry(
+                        slug=slug,
+                        section="topics",
+                        summary=f"Findings from {pid}",
+                        source_count=len(t_findings),
+                        coverage="high" if len(t_findings) >= 5 else "medium" if len(t_findings) >= 2 else "low",
+                    )
+                )
+                page_count += 1
+                progress.advance(task)
+
+            # --- Index page ---
+            progress.update(task, description="Phase 3: index")
+            index_content = build_index_markdown(wiki_entries)
+            self.uploader.stage(wiki_staging, "index.md", index_content)
+            page_count += 1
+            progress.advance(task)
 
         # Upload wiki batch
         target_uri = build_wiki_uri()
@@ -375,6 +427,7 @@ class IngestPipeline:
             wait=False,
         )
 
+        console.print(f"  [green]✓[/] Phase 3: {page_count} wiki pages compiled")
         return page_count
 
     def phase4_update_index_and_log(
@@ -457,6 +510,9 @@ class IngestPipeline:
         dict[str, int]
             Counts per phase: ``corpus``, ``registry``, ``wiki``.
         """
+        console.print("\n[bold]Observatory Wiki V2 Ingest[/]")
+        console.print(f"Projects: {', '.join(project_ids) if project_ids else 'all'}\n")
+
         manifest = self.build_corpus_manifest(project_ids=project_ids)
         corpus_count = self.phase1_upload_corpus(manifest, resume=resume)
 
