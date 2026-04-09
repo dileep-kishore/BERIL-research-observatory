@@ -74,8 +74,10 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
             "in your shell or .env, then rerun `uv run scripts/viking_setup.py --write-config`."
         )
 
+    # Default to gemini-embedding-001 (MTEB #1, free on CBORG, 3072-dim)
+    default_embed = "gemini-embedding-001" if cborg_key else "text-embedding-3-large"
     embedding_model = (
-        _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_MODEL") or "text-embedding-3-large"
+        _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_MODEL") or default_embed
     )
     embedding_dimension = int(
         _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_DIMENSION") or "3072"
