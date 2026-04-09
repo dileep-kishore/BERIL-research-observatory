@@ -9,7 +9,7 @@ from tempfile import mkdtemp
 from observatory_context.client import OpenVikingObservatoryClient
 from observatory_context.ingest.batch import BatchUploader
 from observatory_context.ingest.manifest import ResourceManifestItem, build_resource_manifest
-from observatory_context.uris import build_corpus_uri, build_observatory_root_uri, build_wiki_log_uri
+from observatory_context.uris import build_corpus_uri, build_wiki_log_uri
 
 
 class IngestPipeline:

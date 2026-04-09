@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Section display metadata: (key, heading label)
 _SECTION_ORDER: list[tuple[str, str]] = [
