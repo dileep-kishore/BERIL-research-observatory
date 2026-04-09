@@ -162,6 +162,20 @@ class OpenVikingObservatoryClient:
         finally:
             temp_path.unlink(missing_ok=True)
 
+    def write_content(self, uri: str, content: str) -> None:
+        """Write content directly to a URI without temp files.
+
+        Uses the OpenViking filesystem write API when available,
+        falling back to add_text_resource with a temp file.
+        """
+        if hasattr(self.client, 'write'):
+            self.client.write(uri, content.encode("utf-8"))
+        else:
+            self.add_text_resource(
+                uri=uri, content=content, metadata={},
+                reason="Direct content write", wait=False,
+            )
+
     def rm(self, uri: str, recursive: bool = False) -> None:
         """Remove a resource or directory."""
         self.client.rm(uri, recursive=recursive)
