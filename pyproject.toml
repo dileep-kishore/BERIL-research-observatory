@@ -5,7 +5,7 @@ description = "OpenViking migration helpers for the BERIL research observatory"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.26.0",
-    "openviking>=0.2.9",
+    "openviking>=0.3.4",
     "pydantic>=2.5.3",
     "pydantic-settings>=2.1.0",
     "pyyaml>=6.0.1",
