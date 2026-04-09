@@ -128,6 +128,19 @@ class Pitfall(BaseModel):
     category: str | None = None
 
 
+class Discovery(BaseModel):
+    """Serendipitous finding or unexpected pattern."""
+
+    discovery_id: str
+    title: str
+    description: str
+    significance: str | None = None
+    project_ids: list[str] = Field(default_factory=list)
+    related_entities: list[EntityRef] = Field(default_factory=list)
+    source_ref: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
 class ResearchIdea(BaseModel):
     """Future research direction."""
 

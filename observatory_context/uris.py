@@ -227,3 +227,8 @@ def build_registry_pitfall_uri(pitfall_id: str) -> str:
 def build_registry_idea_uri(idea_id: str) -> str:
     path = PurePosixPath("registry", "ideas", f"{_normalize_segment(idea_id)}.yaml")
     return f"{_ROOT}/{path.as_posix()}"
+
+
+def build_registry_discovery_uri(discovery_id: str) -> str:
+    path = PurePosixPath("registry", "discoveries", f"{_normalize_segment(discovery_id)}.yaml")
+    return f"{_ROOT}/{path.as_posix()}"

@@ -9,6 +9,7 @@ import yaml
 
 from observatory_context.registry.schema import (
     Artifact,
+    Discovery,
     Evidence,
     Figure,
     Finding,
@@ -20,6 +21,7 @@ from observatory_context.registry.schema import (
 from observatory_context.staging import write_staged_file
 from observatory_context.uris import (
     build_registry_artifact_uri,
+    build_registry_discovery_uri,
     build_registry_evidence_uri,
     build_registry_figure_uri,
     build_registry_finding_uri,
@@ -121,6 +123,15 @@ class RegistryStore:
             content=_to_yaml(idea),
             metadata={},
             reason=f"Write idea {idea.idea_id}",
+            wait=wait,
+        )
+
+    def write_discovery(self, discovery: Discovery, wait: bool = True) -> None:
+        self.client.add_text_resource(
+            uri=build_registry_discovery_uri(discovery.discovery_id),
+            content=_to_yaml(discovery),
+            metadata={},
+            reason=f"Write discovery {discovery.discovery_id}",
             wait=wait,
         )
 
