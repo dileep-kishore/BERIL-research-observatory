@@ -56,27 +56,31 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
     dotenv = _read_dotenv(repo_root / ".env")
 
     provider = _get_setting(env, dotenv, "OPENVIKING_PROVIDER") or "openai"
-    if provider != "openai":
+
+    # CBORG API (OpenAI-compatible) is the preferred provider for LBNL users.
+    # Falls back to direct OpenAI if CBORG_API_KEY is not set.
+    cborg_key = _get_setting(env, dotenv, "CBORG_API_KEY")
+    openai_key = _get_setting(env, dotenv, "OPENAI_API_KEY")
+
+    if cborg_key:
+        api_key = cborg_key
+        api_base = _get_setting(env, dotenv, "CBORG_API_URL") or "https://api.cborg.lbl.gov/v1"
+    elif openai_key:
+        api_key = openai_key
+        api_base = _get_setting(env, dotenv, "OPENAI_BASE_URL") or "https://api.openai.com/v1"
+    else:
         raise RuntimeError(
-            "Only OPENVIKING_PROVIDER=openai is supported by this repo bootstrap. "
-            "Set OPENAI_API_KEY in your shell or .env."
+            "Missing API key. Set CBORG_API_KEY (preferred) or OPENAI_API_KEY "
+            "in your shell or .env, then rerun `uv run scripts/viking_setup.py --write-config`."
         )
 
-    api_key = _get_setting(env, dotenv, "OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "Missing OPENAI_API_KEY. Set it in your shell or add it to .env, "
-            "then rerun `uv run scripts/viking_setup.py --write-config`."
-        )
-
-    api_base = _get_setting(env, dotenv, "OPENAI_BASE_URL") or "https://api.openai.com/v1"
     embedding_model = (
         _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_MODEL") or "text-embedding-3-large"
     )
     embedding_dimension = int(
         _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_DIMENSION") or "3072"
     )
-    vlm_model = _get_setting(env, dotenv, "OPENVIKING_VLM_MODEL") or "gpt-4o-mini"
+    vlm_model = _get_setting(env, dotenv, "OPENVIKING_VLM_MODEL") or "gpt-5.4-mini"
 
     return {
         "server": _load_server_config(config_path, example_path),
@@ -99,7 +103,7 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
             "api_base": api_base,
             "api_key": api_key,
             "provider": provider,
-            "model": os.environ.get("OPENVIKING_RERANK_MODEL", "gpt-4o-mini"),
+            "model": os.environ.get("OPENVIKING_RERANK_MODEL", "gpt-5.4-mini"),
         },
     }
 
