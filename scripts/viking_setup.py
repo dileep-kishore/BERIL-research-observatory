@@ -79,21 +79,25 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
     embedding_model = (
         _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_MODEL") or default_embed
     )
-    embedding_dimension = int(
-        _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_DIMENSION") or "3072"
-    )
+    embedding_dimension_raw = _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_DIMENSION")
     vlm_model = _get_setting(env, dotenv, "OPENVIKING_VLM_MODEL") or "gpt-5.4-mini"
+
+    dense_config: dict[str, Any] = {
+        "api_base": api_base,
+        "api_key": api_key,
+        "provider": provider,
+        "model": embedding_model,
+    }
+    # Only set dimension when explicitly configured — some models (gemini)
+    # reject the dimensions parameter via CBORG/LiteLLM. OpenViking
+    # auto-detects dimension when omitted.
+    if embedding_dimension_raw:
+        dense_config["dimension"] = int(embedding_dimension_raw)
 
     return {
         "server": _load_server_config(config_path, example_path),
         "embedding": {
-            "dense": {
-                "api_base": api_base,
-                "api_key": api_key,
-                "provider": provider,
-                "dimension": embedding_dimension,
-                "model": embedding_model,
-            }
+            "dense": dense_config,
         },
         "vlm": {
             "api_base": api_base,
