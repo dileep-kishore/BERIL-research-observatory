@@ -51,7 +51,9 @@ def build_delivery(
             model=settings.cborg_model,
             api_key=settings.cborg_api_key,
         )
-    return ContextDelivery(client=client, extractor=extractor)
+    from observatory_context.registry.store import RegistryStore
+    registry_store = RegistryStore(client=client)
+    return ContextDelivery(client=client, extractor=extractor, registry_store=registry_store)
 
 
 def build_service(

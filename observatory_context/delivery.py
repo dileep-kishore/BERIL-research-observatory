@@ -56,15 +56,28 @@ class ContextDelivery:
         An initialised OpenVikingObservatoryClient.
     extractor:
         Optional CBORG extractor for entity extraction and tier generation.
+    registry_store:
+        Optional RegistryStore for structured writes. If None, one is
+        created lazily on first access via the ``registry`` property.
     """
 
     def __init__(
         self,
         client: OpenVikingObservatoryClient,
         extractor: CBORGExtractor | None = None,
+        registry_store: Any | None = None,
     ) -> None:
         self.client = client
         self.extractor = extractor
+        self.registry_store = registry_store
+
+    @property
+    def registry(self):
+        """Access the registry store, creating one lazily if needed."""
+        if self.registry_store is None:
+            from observatory_context.registry.store import RegistryStore
+            self.registry_store = RegistryStore(client=self.client)
+        return self.registry_store
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -740,6 +753,41 @@ class ContextDelivery:
         metadata.setdefault("date", data.get("date", today))
 
         self.ingest_resource(uri, markdown, metadata=metadata, generate_tiers=False, wait=wait)
+
+        # Also write to structured registry if applicable
+        try:
+            if collection == "pitfall":
+                from observatory_context.registry.schema import Pitfall
+                self.registry.write_pitfall(Pitfall(
+                    pitfall_id=item_id,
+                    title=data.get("title", item_id),
+                    description=data.get("description", data.get("problem", "")),
+                    applies_to=metadata.get("applies_to", []),
+                    project_ids=metadata.get("project_ids", []),
+                    tags=metadata.get("tags", []),
+                    category=metadata.get("category"),
+                ), wait=False)
+            elif collection == "discovery":
+                from observatory_context.registry.schema import Discovery
+                self.registry.write_discovery(Discovery(
+                    discovery_id=item_id,
+                    title=data.get("title", item_id),
+                    description=data.get("description", ""),
+                    project_ids=metadata.get("project_ids", []),
+                    tags=metadata.get("tags", []),
+                ), wait=False)
+            elif collection == "research_idea":
+                from observatory_context.registry.schema import ResearchIdea
+                self.registry.write_idea(ResearchIdea(
+                    idea_id=item_id,
+                    statement=data.get("statement", data.get("title", "")),
+                    motivation=data.get("motivation", ""),
+                    priority=data.get("priority", "medium"),
+                    status=data.get("status", "proposed"),
+                    project_ids=metadata.get("project_ids", []),
+                ), wait=False)
+        except Exception:
+            logger.debug("Registry write failed for %s/%s (non-fatal)", collection, item_id)
 
         # Cross-link to related projects
         project_ids = metadata.get("project_ids") or data.get("project_ids") or []
