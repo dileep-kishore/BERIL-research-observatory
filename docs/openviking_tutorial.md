@@ -34,14 +34,11 @@ values for:
 | `OPENVIKING_EMBEDDING_MODEL` | `text-embedding-3-large` |
 | `OPENVIKING_EMBEDDING_DIMENSION` | `3072` |
 
-The config also includes VLM and rerank sections that use CBORG:
+If `CBORG_API_KEY` is available, the generated config also includes a
+CBORG-backed rerank section:
 
 ```json
 {
-  "vlm": {
-    "api_base": "https://api.cborg.lbl.gov/v1",
-    "model": "gpt-5.4-mini"
-  },
   "rerank": {
     "api_base": "https://api.cborg.lbl.gov/v1",
     "model": "gpt-5.4-mini"
@@ -140,9 +137,8 @@ exponential backoff if the server holds a lock from prior processing.
 ### Server-side processing
 
 After upload, OpenViking processes each resource asynchronously. The knowledge
-layer described here does not depend on any VLM step; it is built from
-structured registry data plus NetworkX graph artifacts and is queryable
-immediately after export.
+layer described here is built from structured registry data plus NetworkX graph
+artifacts and is queryable immediately after export.
 
 Use `--wait` to block until processing completes, or omit it — data is
 queryable immediately, summaries populate in the background.

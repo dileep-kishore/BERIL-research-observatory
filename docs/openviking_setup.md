@@ -41,16 +41,17 @@ then repo-local `.env`.
 |------|--------|
 | `--no-resume` | Re-upload all resources (ignore existing) |
 | `--wait` | Block until server finishes processing (slow — see below) |
+| `--wait-timeout S` | Maximum seconds to wait when `--wait` is set |
 | `--project X` | Limit to specific project(s), repeatable |
 | `--dry-run` | Preview manifest without uploading |
 | `--check` | Verify all expected resources are present |
 | `--fix` | Re-ingest missing resources |
 | `--model M` | Override CBORG model for extraction |
 
-**Note on `--wait`**: The server generates VLM file summaries for every
-ingested resource. With CBORG's rate limit (~20 req/min), processing
-1000+ resources takes 30+ minutes. Omit `--wait` for faster runs — the
-server processes asynchronously and data is queryable immediately.
+**Note on `--wait`**: The server processes uploaded resources
+asynchronously, so large rebuilds can still take a while even after the
+pipeline finishes staging and uploading files. Omit `--wait` for faster
+runs if you do not need a blocking confirmation.
 
 ## Verification
 
