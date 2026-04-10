@@ -66,7 +66,10 @@ _ENTITY_TYPE_PLURALS = {
     "organism": "organisms",
     "gene": "genes",
     "pathway": "pathways",
+    "condition": "conditions",
+    "environment": "environments",
     "method": "methods",
+    "dataset": "datasets",
     "concept": "concepts",
 }
 

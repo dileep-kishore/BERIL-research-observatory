@@ -336,22 +336,33 @@ class CBORGExtractor:
         """
         import time
 
+        _RETRYABLE = {429, 502, 503, 504}
         for attempt in range(5):
-            response = self._client.post(
-                f"{self._api_url}/chat/completions",
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    "max_tokens": max_tokens,
-                    "temperature": 0.0,
-                },
-            )
-            if response.status_code == 429:
+            try:
+                response = self._client.post(
+                    f"{self._api_url}/chat/completions",
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                        "max_tokens": max_tokens,
+                        "temperature": 0.0,
+                    },
+                )
+            except httpx.TransportError as exc:
+                wait = 2 ** attempt
+                logger.warning("Transport error, retrying in %ds (attempt %d/5): %s", wait, attempt + 1, exc)
+                time.sleep(wait)
+                continue
+
+            if response.status_code in _RETRYABLE:
                 wait = float(response.headers.get("retry-after", 2 ** attempt))
-                logger.info("Rate limited, retrying in %.1fs (attempt %d/5)", wait, attempt + 1)
+                logger.warning(
+                    "HTTP %d, retrying in %.1fs (attempt %d/5)",
+                    response.status_code, wait, attempt + 1,
+                )
                 time.sleep(wait)
                 continue
             response.raise_for_status()

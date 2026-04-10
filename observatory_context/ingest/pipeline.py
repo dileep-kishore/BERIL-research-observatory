@@ -443,17 +443,28 @@ class IngestPipeline:
                 hypotheses = staged_hypotheses
 
         if not findings and not hypotheses:
-            console.print("  [dim]Phase 3: skipped (no registry entries)[/]")
+            console.print("  [dim]Phase 4: skipped (no registry entries)[/]")
             return 0
 
         wiki_staging = self.staging_root / "wiki"
         wiki_staging.mkdir(parents=True, exist_ok=True)
 
+        # Load graph for cross-linking (built in Phase 3)
+        import networkx as nx
+        graph_path = self.repo_root / "data" / "graph" / "graph.json"
+        graph: nx.MultiDiGraph | None = None
+        communities: dict[str, dict] | None = None
+        if graph_path.exists():
+            import json as _json
+            graph = nx.node_link_graph(_json.loads(graph_path.read_text(encoding="utf-8")))
+            comm_path = self.repo_root / "data" / "graph" / "communities.json"
+            if comm_path.exists():
+                communities = _json.loads(comm_path.read_text(encoding="utf-8"))
+
         wiki_entries: list[WikiEntry] = []
         page_count = 0
 
         # --- Entity pages ---
-        # Group findings by entity ref (type, label)
         entity_findings: dict[tuple[str, str], list[Finding]] = {}
         entity_hypotheses: dict[tuple[str, str], list[Hypothesis]] = {}
         entity_projects: dict[tuple[str, str], set[str]] = {}
@@ -474,27 +485,70 @@ class IngestPipeline:
         all_entity_keys = set(entity_findings) | set(entity_hypotheses)
         project_findings: dict[str, list[Finding]] = {}
         project_hypotheses: dict[str, list[Hypothesis]] = {}
+        project_entities: dict[str, list[dict]] = {}
         for f in findings:
             project_findings.setdefault(f.project_id, []).append(f)
+            for ref in f.related_entities:
+                project_entities.setdefault(f.project_id, []).append(
+                    {"type": ref.type, "label": ref.label}
+                )
         for h in hypotheses:
             for pid in h.project_ids:
                 project_hypotheses.setdefault(pid, []).append(h)
         topic_ids = sorted(set(project_findings) | set(project_hypotheses))
 
-        # Total pages: entities + hypotheses + topics + index
+        # Deduplicate project_entities
+        for pid in project_entities:
+            seen = set()
+            deduped = []
+            for ent in project_entities[pid]:
+                key = (ent["type"], ent["label"])
+                if key not in seen:
+                    seen.add(key)
+                    deduped.append(ent)
+            project_entities[pid] = deduped
+
         total_pages = len(all_entity_keys) + len(hypotheses) + len(topic_ids) + 1
 
         with _make_progress() as progress:
-            task = progress.add_task("Phase 3: Compiling wiki", total=total_pages)
+            task = progress.add_task("Phase 4: Compiling wiki", total=total_pages)
 
             from observatory_context.uris import _ENTITY_TYPE_PLURALS
+            from observatory_context.graph.builder import _entity_node_id
 
             for entity_type, label in sorted(all_entity_keys):
                 slug = slugify(label)
-                progress.update(task, description=f"Phase 3: entity/{slug}")
+                progress.update(task, description=f"Phase 4: entity/{slug}")
                 e_findings = entity_findings.get((entity_type, label), [])
                 e_hypotheses = entity_hypotheses.get((entity_type, label), [])
                 e_projects = sorted(entity_projects.get((entity_type, label), set()))
+
+                # Get related entities from graph
+                related_entities: list[dict] = []
+                community_info: dict | None = None
+                if graph is not None:
+                    nid = _entity_node_id(entity_type, label)
+                    if nid in graph:
+                        # Find RELATED_TO neighbors
+                        for _, neighbor, data in graph.edges(nid, data=True):
+                            if data.get("relation") == "RELATED_TO" and neighbor in graph.nodes:
+                                ndata = graph.nodes[neighbor]
+                                if ndata.get("kind") == "entity":
+                                    related_entities.append({
+                                        "type": ndata.get("entity_type", "concept"),
+                                        "label": ndata.get("canonical_name", neighbor),
+                                        "weight": data.get("weight", 1),
+                                    })
+                        # Get community info
+                        if communities:
+                            comm_id = str(graph.nodes[nid].get("community", ""))
+                            if comm_id in communities:
+                                c = communities[comm_id]
+                                community_info = {
+                                    "name": c.get("name", f"Community {comm_id}"),
+                                    "size": len(c.get("members", [])),
+                                }
+
                 content = compile_entity_page(
                     entity_type=entity_type,
                     slug=slug,
@@ -502,6 +556,8 @@ class IngestPipeline:
                     findings=e_findings,
                     hypotheses=e_hypotheses,
                     project_ids=e_projects,
+                    related_entities=related_entities,
+                    community=community_info,
                 )
                 plural = _ENTITY_TYPE_PLURALS.get(entity_type, f"{entity_type}s")
                 rel_path = f"entities/{plural}/{slug}.md"
@@ -521,9 +577,8 @@ class IngestPipeline:
             # --- Hypothesis pages ---
             for h in hypotheses:
                 slug = slugify(h.hypothesis_id)
-                progress.update(task, description=f"Phase 3: hypothesis/{slug}")
+                progress.update(task, description=f"Phase 4: hypothesis/{slug}")
                 supporting = [f for f in findings if h.hypothesis_id in (f.evidence_ids or [])]
-                # Also include findings from same projects
                 if not supporting:
                     supporting = [f for f in findings if f.project_id in h.project_ids]
                 content = compile_hypothesis_page(
@@ -547,15 +602,17 @@ class IngestPipeline:
             # --- Topic pages ---
             for pid in topic_ids:
                 slug = slugify(pid)
-                progress.update(task, description=f"Phase 3: topic/{slug}")
+                progress.update(task, description=f"Phase 4: topic/{slug}")
                 t_findings = project_findings.get(pid, [])
                 t_hypotheses = project_hypotheses.get(pid, [])
+                t_entities = project_entities.get(pid, [])
                 content = compile_topic_page(
                     slug=slug,
                     title=pid,
                     findings=t_findings,
                     hypotheses=t_hypotheses,
                     project_ids=[pid],
+                    entities_studied=t_entities,
                 )
                 rel_path = f"topics/{slug}.md"
                 self.uploader.stage(wiki_staging, rel_path, content)
@@ -572,7 +629,7 @@ class IngestPipeline:
                 progress.advance(task)
 
             # --- Index page ---
-            progress.update(task, description="Phase 3: index")
+            progress.update(task, description="Phase 4: index")
             index_content = build_index_markdown(wiki_entries)
             self.uploader.stage(wiki_staging, "index.md", index_content)
             page_count += 1
@@ -583,11 +640,11 @@ class IngestPipeline:
         self.uploader.upload(
             wiki_staging,
             target_uri,
-            reason="Phase 3 wiki compilation",
+            reason="Phase 4 wiki compilation",
             wait=False,
         )
 
-        console.print(f"  [green]✓[/] Phase 3: {page_count} wiki pages compiled")
+        console.print(f"  [green]✓[/] Phase 4: {page_count} wiki pages compiled")
         return page_count
 
     def phase5_update_index_and_log(

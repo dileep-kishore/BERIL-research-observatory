@@ -1,12 +1,19 @@
-"""Wiki page compiler: produces markdown with YAML frontmatter from registry data."""
+"""Wiki page compiler: produces interconnected markdown with YAML frontmatter.
+
+Pages link to each other using relative markdown links so the agent can
+navigate the wiki by following connections rather than searching.
+"""
 
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import yaml
 
+from observatory_context._text import slugify
 from observatory_context.registry.schema import Finding, Hypothesis
+from observatory_context.uris import _ENTITY_TYPE_PLURALS
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +39,25 @@ def _today() -> str:
     return date.today().isoformat()
 
 
+def _entity_link(entity_type: str, label: str) -> str:
+    """Generate a relative markdown link to an entity page."""
+    plural = _ENTITY_TYPE_PLURALS.get(entity_type, f"{entity_type}s")
+    slug = slugify(label)
+    return f"[{label}](wiki/entities/{plural}/{slug}.md)"
+
+
+def _topic_link(project_id: str) -> str:
+    """Generate a relative markdown link to a topic page."""
+    slug = slugify(project_id)
+    return f"[{project_id}](wiki/topics/{slug}.md)"
+
+
+def _hypothesis_link(hypothesis_id: str) -> str:
+    """Generate a relative markdown link to a hypothesis page."""
+    slug = slugify(hypothesis_id)
+    return f"[{hypothesis_id}](wiki/hypotheses/{slug}.md)"
+
+
 # ---------------------------------------------------------------------------
 # Compilers
 # ---------------------------------------------------------------------------
@@ -45,29 +71,31 @@ def compile_entity_page(
     findings: list[Finding],
     hypotheses: list[Hypothesis],
     project_ids: list[str],
+    related_entities: list[dict[str, Any]] | None = None,
+    community: dict[str, Any] | None = None,
 ) -> str:
-    """Compile a wiki page for a named entity.
+    """Compile a wiki page for a named entity with cross-links.
 
     Parameters
     ----------
-    entity_type:
+    entity_type
         The entity class (e.g. "organism", "gene", "pathway").
-    slug:
+    slug
         URL-safe identifier for this entity.
-    label:
+    label
         Human-readable display name.
-    findings:
+    findings
         Findings that mention this entity.
-    hypotheses:
+    hypotheses
         Hypotheses that involve this entity.
-    project_ids:
+    project_ids
         Projects this entity appears in.
-
-    Returns
-    -------
-    str
-        Markdown string with YAML frontmatter.
+    related_entities
+        Co-occurring entities: ``[{type, label, weight}, ...]``.
+    community
+        Community info: ``{name, members, ...}``.
     """
+    related_entities = related_entities or []
     source_count = len(findings)
     coverage = _coverage_label(source_count)
 
@@ -86,32 +114,56 @@ def compile_entity_page(
     lines.append(f"**Entity type:** {entity_type}")
     lines.append("")
 
+    # Projects as links
     if project_ids:
-        lines.append(f"**Projects:** {', '.join(project_ids)}")
+        links = [_topic_link(pid) for pid in project_ids]
+        lines.append(f"**Projects:** {', '.join(links)}")
         lines.append("")
 
     lines.append(f"**Coverage:** {coverage}")
     lines.append("")
 
-    # Key Findings
+    # Key Findings with entity cross-links
     lines.append("## Key Findings")
     lines.append("")
     if findings:
         for f in findings:
-            lines.append(f"- **{f.finding_id}**: {f.title} — {f.statement}")
+            # Link entities mentioned in the finding
+            statement = f.statement
+            topic = _topic_link(f.project_id)
+            lines.append(f"- **{f.finding_id}**: {f.title} — {statement} ({topic})")
     else:
         lines.append("No findings recorded yet.")
     lines.append("")
 
-    # Related Hypotheses
+    # Related Hypotheses as links
     lines.append("## Related Hypotheses")
     lines.append("")
     if hypotheses:
         for h in hypotheses:
-            lines.append(f"- **{h.hypothesis_id}** ({h.status}): {h.statement}")
+            link = _hypothesis_link(h.hypothesis_id)
+            lines.append(f"- {link} ({h.status}): {h.statement}")
     else:
         lines.append("No hypotheses recorded yet.")
     lines.append("")
+
+    # Related Entities (from graph co-occurrence)
+    if related_entities:
+        lines.append("## Related Entities")
+        lines.append("")
+        for rel in sorted(related_entities, key=lambda r: r.get("weight", 0), reverse=True)[:10]:
+            link = _entity_link(rel["type"], rel["label"])
+            weight = rel.get("weight", 1)
+            lines.append(f"- {link} (co-occurs in {weight} finding{'s' if weight != 1 else ''})")
+        lines.append("")
+
+    # Community membership
+    if community:
+        lines.append("## Community")
+        lines.append("")
+        lines.append(f"Member of **{community.get('name', 'unnamed')}** cluster "
+                      f"({community.get('size', '?')} entities).")
+        lines.append("")
 
     return fm + "\n".join(lines)
 
@@ -123,27 +175,26 @@ def compile_topic_page(
     findings: list[Finding],
     hypotheses: list[Hypothesis],
     project_ids: list[str],
+    entities_studied: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Compile a synthesis wiki page for a research topic.
+    """Compile a synthesis wiki page for a research topic with cross-links.
 
     Parameters
     ----------
-    slug:
+    slug
         URL-safe identifier for this topic.
-    title:
+    title
         Human-readable topic title.
-    findings:
+    findings
         Findings relevant to this topic.
-    hypotheses:
+    hypotheses
         Hypotheses relevant to this topic.
-    project_ids:
+    project_ids
         Projects covering this topic.
-
-    Returns
-    -------
-    str
-        Markdown string with YAML frontmatter.
+    entities_studied
+        Entities studied in this project: ``[{type, label}, ...]``.
     """
+    entities_studied = entities_studied or []
     source_count = len(findings)
     coverage = _coverage_label(source_count)
 
@@ -163,23 +214,36 @@ def compile_topic_page(
     )
     lines.append("")
 
-    # Key Findings — numbered list
+    # Entities studied (linked)
+    if entities_studied:
+        lines.append("## Entities Studied")
+        lines.append("")
+        for ent in entities_studied:
+            link = _entity_link(ent["type"], ent["label"])
+            lines.append(f"- {link} ({ent['type']})")
+        lines.append("")
+
+    # Key Findings with entity links
     lines.append("## Key Findings")
     lines.append("")
     if findings:
         for i, f in enumerate(findings, start=1):
-            lines.append(f"{i}. **{f.finding_id}**: {f.title} — {f.statement}")
+            # Cross-link related entities within the finding
+            entity_links = [_entity_link(ref.type, ref.label) for ref in f.related_entities]
+            entity_str = f" — entities: {', '.join(entity_links)}" if entity_links else ""
+            lines.append(f"{i}. **{f.finding_id}**: {f.title} — {f.statement}{entity_str}")
     else:
         lines.append("No findings recorded yet.")
     lines.append("")
 
-    # Hypotheses table
+    # Hypotheses table with links
     lines.append("## Hypotheses")
     lines.append("")
     lines.append("| ID | Statement | Status |")
     lines.append("|----|-----------|--------|")
     for h in hypotheses:
-        lines.append(f"| {h.hypothesis_id} | {h.statement} | {h.status} |")
+        link = _hypothesis_link(h.hypothesis_id)
+        lines.append(f"| {link} | {h.statement} | {h.status} |")
     if not hypotheses:
         lines.append("| — | No hypotheses yet. | — |")
     lines.append("")
@@ -198,19 +262,14 @@ def compile_hypothesis_page(
     hypothesis: Hypothesis,
     supporting_findings: list[Finding],
 ) -> str:
-    """Compile a tracker wiki page for a hypothesis.
+    """Compile a tracker wiki page for a hypothesis with cross-links.
 
     Parameters
     ----------
-    hypothesis:
+    hypothesis
         The hypothesis record to document.
-    supporting_findings:
+    supporting_findings
         Findings that support or test this hypothesis.
-
-    Returns
-    -------
-    str
-        Markdown string with YAML frontmatter.
     """
     source_count = len(supporting_findings)
     coverage = _coverage_label(source_count)
@@ -237,19 +296,31 @@ def compile_hypothesis_page(
         lines.append(f"**Scope:** {hypothesis.scope}")
         lines.append("")
 
+    # Projects as links
     if hypothesis.project_ids:
-        lines.append(f"**Projects:** {', '.join(hypothesis.project_ids)}")
+        links = [_topic_link(pid) for pid in hypothesis.project_ids]
+        lines.append(f"**Projects:** {', '.join(links)}")
         lines.append("")
 
     lines.append(f"**Coverage:** {coverage}")
     lines.append("")
 
-    # Supporting Evidence
+    # Related entities (linked)
+    if hypothesis.related_entities:
+        lines.append("## Related Entities")
+        lines.append("")
+        for ref in hypothesis.related_entities:
+            link = _entity_link(ref.type, ref.label)
+            lines.append(f"- {link} ({ref.type})")
+        lines.append("")
+
+    # Supporting Evidence with project links
     lines.append("## Supporting Evidence")
     lines.append("")
     if supporting_findings:
         for f in supporting_findings:
-            lines.append(f"- **{f.finding_id}**: {f.title} — {f.statement}")
+            topic = _topic_link(f.project_id)
+            lines.append(f"- **{f.finding_id}**: {f.title} — {f.statement} ({topic})")
     else:
         lines.append("No supporting findings recorded yet.")
     lines.append("")
