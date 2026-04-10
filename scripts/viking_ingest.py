@@ -57,6 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Block until all processing completes",
     )
     parser.add_argument(
+        "--wait-timeout", type=float, default=None,
+        help="Maximum seconds to wait for OpenViking processing when --wait is set.",
+    )
+    parser.add_argument(
         "--project", action="append", default=None,
         help="Limit to specific project(s). Repeat for multiple.",
     )
@@ -174,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         pipeline.phase1_upload_corpus(missing, resume=False)
         if args.wait:
             with console.status("[bold]Waiting for OpenViking to process..."):
-                client.wait_until_processed()
+                client.wait_until_processed(timeout=args.wait_timeout)
         console.rule("Re-checking")
         still_missing = _check_manifest(client, manifest)
         return 1 if still_missing else 0
@@ -183,13 +187,14 @@ def main(argv: list[str] | None = None) -> int:
     from observatory_context.ingest.pipeline import IngestPipeline
 
     extractor = None
-    if settings.cborg_api_key:
+    cborg_api_key = getattr(settings, "cborg_api_key", None)
+    if cborg_api_key:
         from observatory_context.extraction import CBORGExtractor
 
         extractor = CBORGExtractor(
             api_url=settings.cborg_api_url,
             model=args.model or settings.cborg_model,
-            api_key=settings.cborg_api_key,
+            api_key=cborg_api_key,
         )
 
     pipeline = IngestPipeline(client=client, repo_root=REPO_ROOT)
@@ -200,9 +205,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.wait:
-        with console.status("[bold]Waiting for OpenViking to finish processing..."):
-            client.wait_until_processed()
-        console.print("[green]All resources processed.[/]")
+        try:
+            with console.status("[bold]Waiting for OpenViking to finish processing..."):
+                client.wait_until_processed(timeout=args.wait_timeout)
+            console.print("[green]All resources processed.[/]")
+        except TimeoutError as exc:
+            console.print(f"[yellow]Warning:[/] {exc}")
 
     console.print(f"\n[bold green]Done![/] {results}")
     return 0

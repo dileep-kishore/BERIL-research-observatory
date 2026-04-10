@@ -12,6 +12,11 @@ from typing import Any
 import yaml
 
 from observatory_context._text import slugify
+from observatory_context.graph.knowledge_synthesis import (
+    SynthesizedEntity,
+    SynthesizedHypothesis,
+    SynthesizedTopic,
+)
 from observatory_context.registry.schema import Finding, Hypothesis
 from observatory_context.uris import _ENTITY_TYPE_PLURALS
 
@@ -213,6 +218,9 @@ def compile_topic_page(
         f"Topic synthesis across {len(project_ids)} project(s). Coverage: **{coverage}**."
     )
     lines.append("")
+    if project_ids:
+        lines.append(f"**Projects:** {', '.join(_topic_link(project_id) for project_id in project_ids)}")
+        lines.append("")
 
     # Entities studied (linked)
     if entities_studied:
@@ -326,3 +334,79 @@ def compile_hypothesis_page(
     lines.append("")
 
     return fm + "\n".join(lines)
+
+
+def compile_entity_page_from_synthesis(
+    entity: SynthesizedEntity,
+    *,
+    findings_by_id: dict[str, Finding],
+    hypotheses_by_id: dict[str, Hypothesis],
+) -> str:
+    """Compile an entity page from synthesis-layer summaries."""
+    return compile_entity_page(
+        entity_type=entity.entity_type,
+        slug=entity.slug,
+        label=entity.canonical_name,
+        findings=[findings_by_id[finding_id] for finding_id in entity.finding_ids if finding_id in findings_by_id],
+        hypotheses=[
+            hypotheses_by_id[hypothesis_id]
+            for hypothesis_id in entity.hypothesis_ids
+            if hypothesis_id in hypotheses_by_id
+        ],
+        project_ids=entity.project_ids,
+        related_entities=[
+            {
+                "type": related.entity_type,
+                "label": related.canonical_name,
+                "weight": related.weight,
+            }
+            for related in entity.related_entities
+        ],
+        community=(
+            {
+                "name": entity.community_name,
+                "size": entity.community_size,
+            }
+            if entity.community_name
+            else None
+        ),
+    )
+
+
+def compile_hypothesis_page_from_synthesis(
+    hypothesis: SynthesizedHypothesis,
+    *,
+    findings_by_id: dict[str, Finding],
+    hypotheses_by_id: dict[str, Hypothesis],
+) -> str:
+    """Compile a hypothesis page from synthesis-layer summaries."""
+    hypothesis_model = hypotheses_by_id[hypothesis.hypothesis_id]
+    return compile_hypothesis_page(
+        hypothesis=hypothesis_model,
+        supporting_findings=[
+            findings_by_id[finding_id]
+            for finding_id in hypothesis.supporting_findings
+            if finding_id in findings_by_id
+        ],
+    )
+
+
+def compile_topic_page_from_synthesis(
+    topic: SynthesizedTopic,
+    *,
+    findings_by_id: dict[str, Finding],
+    hypotheses_by_id: dict[str, Hypothesis],
+) -> str:
+    """Compile a topic page from synthesis-layer summaries."""
+    return compile_topic_page(
+        slug=topic.slug,
+        title=topic.title,
+        findings=[findings_by_id[finding_id] for finding_id in topic.finding_ids if finding_id in findings_by_id],
+        hypotheses=[
+            hypotheses_by_id[hypothesis_id]
+            for hypothesis_id in topic.hypothesis_ids
+            if hypothesis_id in hypotheses_by_id
+        ],
+        project_ids=topic.project_ids,
+        entities_studied=topic.entity_refs,
+    )
