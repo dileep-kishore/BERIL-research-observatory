@@ -209,6 +209,9 @@ class IngestPipeline:
                     progress.advance(task)
                     continue
 
+                # Throttle to stay under CBORG rate limits (~20 req/min)
+                time.sleep(3)
+
                 entries = extraction_to_registry_entries(extraction, pid)
                 all_entries.extend(entries)
 
