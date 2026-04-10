@@ -1,38 +1,61 @@
 # OpenViking Setup
 
-Use the current end-to-end workflow in
-[docs/openviking_tutorial.md](openviking_tutorial.md).
+Use the full tutorial in [docs/openviking_tutorial.md](openviking_tutorial.md)
+for detailed instructions.
 
-The shortest runnable path is:
+## Quick start
 
 ```bash
 uv sync --extra dev
+
+# Generate server config from env vars or .env
 uv run scripts/viking_setup.py --write-config
 export OPENVIKING_CONFIG_FILE="$PWD/config/openviking/ov.conf"
 
-# Start server (in a separate terminal)
+# Start server (separate terminal)
 uv run openviking-server --config "$OPENVIKING_CONFIG_FILE"
 
 # Verify health
 uv run scripts/viking_server_healthcheck.py
 
-# Full ingest with knowledge graph (first time)
-uv run scripts/viking_ingest.py --no-resume --rebuild-graph --clean --wait
+# Full ingest (first time)
+uv run scripts/viking_ingest.py --no-resume
 
 # Incremental update (after editing projects)
-uv run scripts/viking_ingest.py --graph-only --wait
+uv run scripts/viking_ingest.py
 ```
 
-`uv run scripts/viking_setup.py --write-config` generates a runnable
-`ov.conf` from your shell environment first, then falls back to repo-local
-`.env`. Set `OPENAI_API_KEY` in either place before running it.
+## Required environment variables
 
-Knowledge graph extraction requires `CBORG_API_KEY` (default model:
-`gpt-5.4-mini`). Extractions are cached locally in `.kg_cache/` so
-subsequent runs only re-extract changed projects.
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | Embeddings via OpenAI `text-embedding-3-large` |
+| `CBORG_API_KEY` | Knowledge extraction via CBORG `gpt-5.4-mini` |
 
-Use `uv run scripts/viking_ingest.py --check` to verify all resources are
-present and `--fix` to re-ingest any that are missing.
+`viking_setup.py --write-config` reads from shell environment first,
+then repo-local `.env`.
 
-Use `uv run scripts/viking_server_healthcheck.py --watch` to monitor
-processing queue progress in real time.
+## Ingest flags
+
+| Flag | Effect |
+|------|--------|
+| `--no-resume` | Re-upload all resources (ignore existing) |
+| `--wait` | Block until server finishes processing (slow — see below) |
+| `--project X` | Limit to specific project(s), repeatable |
+| `--dry-run` | Preview manifest without uploading |
+| `--check` | Verify all expected resources are present |
+| `--fix` | Re-ingest missing resources |
+| `--model M` | Override CBORG model for extraction |
+
+**Note on `--wait`**: The server generates VLM file summaries for every
+ingested resource. With CBORG's rate limit (~20 req/min), processing
+1000+ resources takes 30+ minutes. Omit `--wait` for faster runs — the
+server processes asynchronously and data is queryable immediately.
+
+## Verification
+
+```bash
+uv run scripts/viking_server_healthcheck.py --watch  # monitor queue
+uv run scripts/viking_ingest.py --check              # check parity
+uv run scripts/viking_validate_parity.py             # full validation
+```
