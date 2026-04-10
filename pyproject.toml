@@ -22,6 +22,11 @@ berdl = [
     "pandas",
     "pproxy",
 ]
+graph = [
+    "mcp>=1.0.0",
+    "networkx>=3.2",
+    "graspologic>=3.3.0",
+]
 ingest = [
     "jupyter",
     "linkml>=1.9.4",

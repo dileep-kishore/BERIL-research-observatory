@@ -75,15 +75,13 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
         _get_setting(env, dotenv, "OPENVIKING_EMBEDDING_DIMENSION") or "3072"
     )
 
-    # VLM + rerank: CBORG if available, else OpenAI
+    # Rerank: CBORG if available, else OpenAI
     if cborg_key:
         llm_api_key = cborg_key
         llm_api_base = _get_setting(env, dotenv, "CBORG_API_URL") or "https://api.cborg.lbl.gov/v1"
     else:
         llm_api_key = openai_key
         llm_api_base = embed_api_base
-
-    vlm_model = _get_setting(env, dotenv, "OPENVIKING_VLM_MODEL") or "gpt-5.4-mini"
 
     return {
         "server": _load_server_config(config_path, example_path),
@@ -95,12 +93,6 @@ def _build_openviking_config(repo_root: Path, config_path: Path, example_path: P
                 "model": embedding_model,
                 "dimension": embedding_dimension,
             },
-        },
-        "vlm": {
-            "api_base": llm_api_base,
-            "api_key": llm_api_key,
-            "provider": provider,
-            "model": vlm_model,
         },
         "rerank": {
             "api_base": llm_api_base,

@@ -53,9 +53,11 @@ class Finding(BaseModel):
     confidence: Literal["high", "moderate", "low"]
     finding_type: Literal[
         "result", "pattern", "negative_result", "methodological", "operational"
-    ]
+    ] = "result"
     related_entities: list[EntityRef] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)
+    source_span: str | None = None
+    figure_refs: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     figure_ids: list[str] = Field(default_factory=list)

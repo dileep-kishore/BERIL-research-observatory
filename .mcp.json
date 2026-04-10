@@ -10,6 +10,11 @@
       "env": {
         "SEMANTIC_SCHOLAR_API_KEY": "${SEMANTIC_SCHOLAR_API_KEY:-}"
       }
+    },
+    "observatory-graph": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--extra", "graph", "python", "-m", "observatory_context.graph.server"]
     }
   }
 }

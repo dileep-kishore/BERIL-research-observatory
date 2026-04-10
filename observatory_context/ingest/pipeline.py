@@ -22,6 +22,9 @@ from rich.progress import (
 
 from observatory_context._text import slugify
 from observatory_context.client import OpenVikingObservatoryClient
+from observatory_context.graph.builder import GraphBuilder
+from observatory_context.graph.report import generate_graph_report, save_report
+from observatory_context.graph.resolver import EntityResolver
 from observatory_context.ingest.batch import BatchUploader
 from observatory_context.ingest.manifest import ResourceManifestItem, build_resource_manifest
 from observatory_context.registry.extract import extraction_to_registry_entries
@@ -236,7 +239,163 @@ class IngestPipeline:
         console.print(f"  [green]✓[/] Phase 2: {len(all_entries)} registry entries created")
         return len(all_entries)
 
-    def phase3_compile_wiki(
+    def phase3_build_graph(
+        self,
+        manifest: list[ResourceManifestItem],
+        findings: list[Finding] | None = None,
+        hypotheses: list[Hypothesis] | None = None,
+    ) -> int:
+        """Resolve entities and build the knowledge graph.
+
+        Parameters
+        ----------
+        manifest
+            Resource manifest (used to discover project metadata).
+        findings
+            Pre-collected findings. If ``None``, reads staged YAML.
+        hypotheses
+            Pre-collected hypotheses. If ``None``, reads staged YAML.
+
+        Returns
+        -------
+        int
+            Number of graph nodes created.
+        """
+        # Collect entries from staged registry files if not provided
+        if findings is None or hypotheses is None:
+            findings, hypotheses = self._load_staged_entries()
+
+        if not findings and not hypotheses:
+            console.print("  [dim]Phase 3: skipped (no registry entries)[/]")
+            return 0
+
+        graph_dir = self.repo_root / "data" / "graph"
+        graph_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load existing graph for incremental builds
+        graph_path = graph_dir / "graph.json"
+        if graph_path.exists():
+            builder = GraphBuilder.load(graph_path)
+        else:
+            builder = GraphBuilder()
+
+        # Initialize entity resolver
+        aliases_path = graph_dir / "aliases.json"
+        resolver = EntityResolver(
+            aliases=None,  # loads defaults + aliases_path if exists
+        )
+
+        # Collect all entity references for batch resolution
+        entity_refs: list[tuple[str, str]] = []
+        for f in findings:
+            for ref in f.related_entities:
+                entity_refs.append((ref.type, ref.label))
+        for h in hypotheses:
+            for ref in h.related_entities:
+                entity_refs.append((ref.type, ref.label))
+
+        # Resolve all entities
+        with _make_progress() as progress:
+            task = progress.add_task(
+                "Phase 3: Resolving entities", total=3,
+            )
+
+            resolved = resolver.resolve_batch(entity_refs)
+            progress.advance(task)
+
+            # Add project nodes
+            progress.update(task, description="Phase 3: Building graph")
+            project_ids = sorted({pid for item in manifest for pid in item.project_ids})
+            for pid in project_ids:
+                readme_path = self.repo_root / "projects" / pid / "README.md"
+                title = pid
+                if readme_path.exists():
+                    first_line = readme_path.read_text(encoding="utf-8").split("\n")[0]
+                    if first_line.startswith("# "):
+                        title = first_line[2:].strip()
+                builder.add_project(pid, title)
+
+            # Add resolved entities
+            for raw_label, resolved_entity in resolved.items():
+                builder.add_entity(
+                    canonical_name=resolved_entity.canonical,
+                    entity_type=resolved_entity.entity_type,
+                    aliases=resolved_entity.aliases,
+                )
+
+            # Add findings with resolved entity links
+            for f in findings:
+                entity_map = {}
+                for ref in f.related_entities:
+                    if ref.label in resolved:
+                        r = resolved[ref.label]
+                        from observatory_context.graph.builder import _entity_node_id
+                        entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
+                builder.add_finding(f, entity_map)
+
+            # Add hypotheses with resolved entity links
+            for h in hypotheses:
+                entity_map = {}
+                for ref in h.related_entities:
+                    if ref.label in resolved:
+                        r = resolved[ref.label]
+                        from observatory_context.graph.builder import _entity_node_id
+                        entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
+                builder.add_hypothesis(h, entity_map)
+            progress.advance(task)
+
+            # Community detection + report
+            progress.update(task, description="Phase 3: Communities + report")
+            communities = builder.build_communities()
+            builder.serialize(graph_path)
+
+            # Save updated aliases
+            from observatory_context.graph.aliases import save_aliases
+            save_aliases(resolver._aliases, aliases_path)
+
+            # Save communities
+            import json
+            communities_path = graph_dir / "communities.json"
+            communities_path.write_text(
+                json.dumps(communities, indent=2, default=str),
+                encoding="utf-8",
+            )
+
+            # Generate GRAPH_REPORT.md
+            report_content = generate_graph_report(builder)
+            report_path = graph_dir / "GRAPH_REPORT.md"
+            save_report(report_content, report_path)
+            progress.advance(task)
+
+        node_count = builder.G.number_of_nodes()
+        console.print(
+            f"  [green]✓[/] Phase 3: {node_count} nodes, "
+            f"{builder.G.number_of_edges()} edges, "
+            f"{len(communities)} communities"
+        )
+        return node_count
+
+    def _load_staged_entries(self) -> tuple[list[Finding], list[Hypothesis]]:
+        """Load findings and hypotheses from staged registry YAML."""
+        staged_findings: list[Finding] = []
+        staged_hypotheses: list[Hypothesis] = []
+        registry_staging = self.staging_root / "registry"
+        if registry_staging.exists():
+            findings_dir = registry_staging / "findings"
+            if findings_dir.exists():
+                for f in sorted(findings_dir.glob("*.yaml")):
+                    data = yaml.safe_load(f.read_text(encoding="utf-8"))
+                    if data:
+                        staged_findings.append(Finding.model_validate(data))
+            hyp_dir = registry_staging / "hypotheses"
+            if hyp_dir.exists():
+                for f in sorted(hyp_dir.glob("*.yaml")):
+                    data = yaml.safe_load(f.read_text(encoding="utf-8"))
+                    if data:
+                        staged_hypotheses.append(Hypothesis.model_validate(data))
+        return staged_findings, staged_hypotheses
+
+    def phase4_compile_wiki(
         self,
         manifest: list[ResourceManifestItem],
         findings: list[Finding] | None = None,
@@ -431,7 +590,7 @@ class IngestPipeline:
         console.print(f"  [green]✓[/] Phase 3: {page_count} wiki pages compiled")
         return page_count
 
-    def phase4_update_index_and_log(
+    def phase5_update_index_and_log(
         self, project_ids: list[str], phase_results: dict[str, int]
     ) -> None:
         """Append a log entry to wiki/log.md.
@@ -505,7 +664,7 @@ class IngestPipeline:
         resume: bool = True,
         extractor: Any | None = None,
     ) -> dict[str, int]:
-        """Execute the full 4-phase pipeline.
+        """Execute the full 5-phase pipeline.
 
         Parameters
         ----------
@@ -515,12 +674,12 @@ class IngestPipeline:
             Pass to phase 1 to skip already-ingested resources.
         extractor
             A ``CBORGExtractor`` for phase 2 knowledge extraction.
-            If ``None``, phases 2 and 3 are skipped gracefully.
+            If ``None``, phases 2-4 are skipped gracefully.
 
         Returns
         -------
         dict[str, int]
-            Counts per phase: ``corpus``, ``registry``, ``wiki``.
+            Counts per phase: ``corpus``, ``registry``, ``graph``, ``wiki``.
         """
         console.print("\n[bold]Observatory Wiki V2 Ingest[/]")
         console.print(f"Projects: {', '.join(project_ids) if project_ids else 'all'}\n")
@@ -531,17 +690,21 @@ class IngestPipeline:
         # Phase 2: extract knowledge and create registry entries
         registry_count = self.phase2_extract_and_register(manifest, extractor=extractor)
 
-        # Phase 3: compile wiki pages from registry entries
-        wiki_count = self.phase3_compile_wiki(manifest)
+        # Phase 3: resolve entities and build knowledge graph
+        graph_count = self.phase3_build_graph(manifest)
+
+        # Phase 4: compile wiki pages from registry entries
+        wiki_count = self.phase4_compile_wiki(manifest)
 
         phase_results = {
             "corpus": corpus_count,
             "registry": registry_count,
+            "graph": graph_count,
             "wiki": wiki_count,
         }
 
         effective_project_ids = project_ids or [item.project_ids[0] for item in manifest if item.project_ids]
         unique_project_ids = list(dict.fromkeys(effective_project_ids))
-        self.phase4_update_index_and_log(unique_project_ids, phase_results)
+        self.phase5_update_index_and_log(unique_project_ids, phase_results)
 
         return phase_results

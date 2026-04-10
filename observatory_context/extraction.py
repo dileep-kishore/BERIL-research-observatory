@@ -11,8 +11,17 @@ from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
-_ENTITY_TYPES = Literal["organism", "gene", "pathway", "method", "concept"]
+_ENTITY_TYPES = Literal[
+    "organism", "gene", "pathway", "condition",
+    "environment", "method", "dataset", "concept",
+]
 _CONFIDENCE = Literal["high", "moderate", "low"]
+_FINDING_TYPES = Literal["result", "negative_result", "methodological", "pattern"]
+_PREDICATES = Literal[
+    "enriched_in", "depleted_in", "correlated_with", "required_for",
+    "produces", "degrades", "regulates", "inhibits",
+    "associated_with", "studied_in", "contradicts", "supports",
+]
 
 
 class Entity(BaseModel):
@@ -28,10 +37,14 @@ class Relation(BaseModel):
     """A directed relationship between two entities."""
 
     subject: str
-    predicate: str
+    predicate: _PREDICATES
     object: str
     evidence: str
     confidence: _CONFIDENCE
+    conditions: list[str] = Field(default_factory=list)
+    finding_type: _FINDING_TYPES = "result"
+    source_span: str | None = None
+    figure_refs: list[str] = Field(default_factory=list)
 
 
 class HypothesisUpdate(BaseModel):
@@ -41,6 +54,7 @@ class HypothesisUpdate(BaseModel):
     status: str
     claim: str
     evidence_delta: str
+    scope: str | None = None
 
 
 class TimelineEvent(BaseModel):
@@ -62,26 +76,92 @@ class EntityExtraction(BaseModel):
 
 
 _EXTRACTION_SYSTEM = """\
-You are a scientific knowledge extraction assistant. Given a research report \
-and provenance metadata, extract structured knowledge in JSON format matching \
-the schema below. Return ONLY valid JSON with no markdown fences or commentary.
+You are extracting structured knowledge from microbiology research reports \
+covering pangenome analysis, gene fitness, metabolomics, and related topics. \
+Given a research report and provenance metadata, extract structured knowledge \
+in JSON format matching the schema below. Return ONLY valid JSON with no \
+markdown fences or commentary.
 
-Schema:
+## Entity types (8)
+
+Use these types with canonical naming:
+- organism: Full species names (e.g. "Pseudomonas putida", not "P. putida")
+- gene: Standard gene nomenclature (e.g. "PP_1234", "katE")
+- pathway: Normalized common names (e.g. "TCA cycle", "beta-oxidation")
+- condition: Experimental condition (e.g. "zinc stress", "carbon starvation")
+- environment: Growth environment (e.g. "minimal media", "soil rhizosphere")
+- method: Analytical method (e.g. "RB-TnSeq", "LC-MS metabolomics")
+- dataset: Named dataset or database (e.g. "BERDL fitness data", "UniProt")
+- concept: Abstract concept only when no other type fits
+
+## Predicate vocabulary (constrained)
+
+Relations MUST use one of these predicates:
+enriched_in, depleted_in, correlated_with, required_for, produces, degrades, \
+regulates, inhibits, associated_with, studied_in, contradicts, supports
+
+## Confidence calibration
+
+- high: p < 0.01 or strong quantitative evidence
+- moderate: p < 0.05 or qualitative pattern
+- low: suggested but not statistically tested
+
+## Finding type classification
+
+Each relation carries a finding_type:
+- result: quantitative finding with statistical support
+- negative_result: null or no-effect finding
+- methodological: tool, approach, or pipeline used
+- pattern: qualitative observation or trend
+
+## Conditions and evidence
+
+- conditions: list of experimental conditions under which the finding holds \
+(e.g. ["zinc stress", "minimal media", "aerobic"])
+- source_span: a brief verbatim excerpt (1-2 sentences) from the report \
+supporting the claim
+- figure_refs: extract figure references from ![caption](figures/filename) \
+patterns in the report and link relevant ones to each relation
+
+## Timeline events
+
+Extract ALL dated milestones, experiments, and events. Do NOT drop these.
+
+## Schema
+
 {
   "entities": [
-    {"type": "<organism|gene|pathway|method|concept>", "id": "<slug>", "name": "<display name>", "metadata": {}}
+    {"type": "<entity type>", "id": "<slug>", "name": "<canonical display name>", "metadata": {}}
   ],
   "relations": [
-    {"subject": "<entity id>", "predicate": "<verb phrase>", "object": "<entity id>",
-     "evidence": "<brief citation or description>", "confidence": "<high|moderate|low>"}
+    {
+      "subject": "<entity id>",
+      "predicate": "<predicate from vocabulary>",
+      "object": "<entity id>",
+      "evidence": "<brief description of evidence>",
+      "confidence": "<high|moderate|low>",
+      "conditions": ["<condition1>", "..."],
+      "finding_type": "<result|negative_result|methodological|pattern>",
+      "source_span": "<verbatim excerpt from report>",
+      "figure_refs": ["<figures/filename.png>", "..."]
+    }
   ],
   "hypotheses": [
-    {"id": "<hypothesis id>", "status": "<open|supported|refuted|updated>",
-     "claim": "<hypothesis statement>", "evidence_delta": "<what this report adds>"}
+    {
+      "id": "<hypothesis id>",
+      "status": "<open|supported|refuted|updated>",
+      "claim": "<hypothesis statement>",
+      "evidence_delta": "<what this report adds>",
+      "scope": "<organism or condition scope, if applicable>"
+    }
   ],
   "timeline_events": [
-    {"date": "<YYYY-MM-DD>", "event": "<description>", "type": "<milestone|experiment|publication|meeting>",
-     "project": "<project name or null>"}
+    {
+      "date": "<YYYY-MM-DD>",
+      "event": "<description>",
+      "type": "<milestone|experiment|publication|meeting>",
+      "project": "<project name or null>"
+    }
   ]
 }
 """
@@ -225,8 +305,15 @@ class CBORGExtractor:
         provenance_lines = "\n".join(f"  {k}: {v}" for k, v in provenance.items())
         return (
             f"Provenance:\n{provenance_lines}\n\n"
-            f"Extract entities, relations, hypotheses, and timeline_events "
-            f"from the following report.\n\n"
+            f"Extract ALL entities, relations, hypotheses, and timeline_events "
+            f"from the following report. Instructions:\n"
+            f"- Use canonical full names for entities (no abbreviations)\n"
+            f"- Prefer specific entity types over 'concept'\n"
+            f"- Include conditions and source_span for every relation\n"
+            f"- Extract figure references (![caption](figures/...)) and link "
+            f"them to relevant relations\n"
+            f"- Do NOT skip timeline events or dated milestones\n"
+            f"- Use the constrained predicate vocabulary\n\n"
             f"Report:\n{report}"
         )
 
