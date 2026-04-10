@@ -46,7 +46,7 @@ class OpenVikingObservatoryClient:
     def add_resource(self, path: str, uri: str, reason: str, wait: bool = True) -> dict[str, Any]:
         return self.client.add_resource(path=path, to=uri, reason=reason, wait=wait)
 
-    def wait_until_processed(self, timeout: float | None = None) -> dict[str, Any]:
+    def wait_until_processed(self, timeout: float | None = 1800) -> dict[str, Any]:
         try:
             return self.client.wait_processed(timeout=timeout)
         except Exception as exc:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import mkdtemp
@@ -444,13 +445,24 @@ class IngestPipeline:
         """
         entry = self.build_log_entry("ingest", project_ids, phase_results)
         log_uri = build_wiki_log_uri()
-        self.client.add_text_resource(
-            uri=log_uri,
-            content=entry,
-            metadata={"kind": "log", "projects": project_ids},
-            reason="Phase 4 — update wiki log",
-            wait=False,
-        )
+        for attempt in range(8):
+            try:
+                self.client.add_text_resource(
+                    uri=log_uri,
+                    content=entry,
+                    metadata={"kind": "log", "projects": project_ids},
+                    reason="Phase 4 — update wiki log",
+                    wait=False,
+                )
+                break
+            except Exception as exc:
+                if "lock" in str(exc).lower() and attempt < 7:
+                    delay = min(2 ** attempt, 30)
+                    logger.warning("Phase 4 lock contention, retrying in %ds (attempt %d/8)...", delay, attempt + 1)
+                    time.sleep(delay)
+                else:
+                    logger.warning("Phase 4 log entry failed (non-critical): %s", exc)
+                    break
 
     def build_log_entry(
         self,
@@ -518,13 +530,9 @@ class IngestPipeline:
 
         # Phase 2: extract knowledge and create registry entries
         registry_count = self.phase2_extract_and_register(manifest, extractor=extractor)
-        if registry_count > 0:
-            self.client.wait_until_processed()
 
         # Phase 3: compile wiki pages from registry entries
         wiki_count = self.phase3_compile_wiki(manifest)
-        if wiki_count > 0:
-            self.client.wait_until_processed()
 
         phase_results = {
             "corpus": corpus_count,
