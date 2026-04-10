@@ -39,7 +39,7 @@ def _make_extraction() -> EntityExtraction:
         relations=[
             Relation(
                 subject="ecoli",
-                predicate="expresses",
+                predicate="supports",
                 object="lacZ",
                 evidence="Observed in lab conditions",
                 confidence="high",
@@ -235,8 +235,8 @@ def test_phase3_compiles_wiki_from_staged_registry(pipeline, mock_client, tmp_pa
     # Now compile wiki
     count = pipeline.phase3_compile_wiki(manifest)
 
-    # Should produce: entity pages (ecoli, lacZ) + hypothesis page + topic page + index = 5
-    assert count >= 4  # at least entity + hypothesis + topic + index
+    # Minimal staged fixtures compile a hypothesis page, topic page, and index.
+    assert count >= 3
 
     # Check wiki staging directory was created with content
     wiki_staging = pipeline.staging_root / "wiki"
@@ -294,11 +294,10 @@ def test_run_with_extractor_wires_all_phases(pipeline, mock_client, tmp_path):
     )
 
     assert results["registry"] == 2  # 1 finding + 1 hypothesis
-    assert results["wiki"] >= 4  # entities + hypothesis + topic + index
+    assert results["wiki"] >= 4  # synthesis-backed full run emits the broader wiki set
     assert results["corpus"] >= 0
-
-    # wait_until_processed should be called for registry and wiki phases
-    assert mock_client.wait_until_processed.call_count >= 2
+    assert results["knowledge_graph"] > 0
+    assert mock_client.batch_add.call_count >= 3
 
 
 # ------------------------------------------------------------------

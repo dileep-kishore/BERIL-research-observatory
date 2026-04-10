@@ -1,4 +1,4 @@
-"""4-phase ingest pipeline orchestrator for the BERIL Research Observatory."""
+"""Synthesis-backed ingest pipeline orchestrator for the BERIL Research Observatory."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ from rich.progress import (
 from observatory_context._text import slugify
 from observatory_context.client import OpenVikingObservatoryClient
 from observatory_context.graph.builder import GraphBuilder
+from observatory_context.graph.knowledge_graph_export import KnowledgeGraphExporter
+from observatory_context.graph.knowledge_synthesis import KnowledgeSynthesisBundle, KnowledgeSynthesizer
 from observatory_context.graph.report import generate_graph_report, save_report
 from observatory_context.graph.resolver import EntityResolver
 from observatory_context.ingest.batch import BatchUploader
@@ -30,15 +32,16 @@ from observatory_context.ingest.manifest import ResourceManifestItem, build_reso
 from observatory_context.registry.extract import extraction_to_registry_entries
 from observatory_context.registry.schema import Finding, Hypothesis
 from observatory_context.uris import (
+    build_observatory_root_uri,
     build_corpus_uri,
     build_registry_uri,
     build_wiki_log_uri,
     build_wiki_uri,
 )
 from observatory_context.wiki.compiler import (
-    compile_entity_page,
-    compile_hypothesis_page,
-    compile_topic_page,
+    compile_entity_page_from_synthesis,
+    compile_hypothesis_page_from_synthesis,
+    compile_topic_page_from_synthesis,
 )
 from observatory_context.wiki.index import WikiEntry, build_index_markdown
 
@@ -398,9 +401,95 @@ class IngestPipeline:
                         staged_hypotheses.append(Hypothesis.model_validate(data))
         return staged_findings, staged_hypotheses
 
-    def phase4_compile_wiki(
+    def _load_graph_artifacts(self) -> tuple[Any | None, dict[str, dict] | None]:
+        """Load persisted graph and community artifacts from disk."""
+        graph_path = self.repo_root / "data" / "graph" / "graph.json"
+        communities_path = self.repo_root / "data" / "graph" / "communities.json"
+        graph = None
+        communities = None
+        if graph_path.exists():
+            graph = GraphBuilder.load(graph_path).G
+        if communities_path.exists():
+            import json
+
+            communities = json.loads(communities_path.read_text(encoding="utf-8"))
+        return graph, communities
+
+    def _build_project_metadata(
         self,
         manifest: list[ResourceManifestItem],
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Build project titles and optional dates from repository files."""
+        project_titles: dict[str, str] = {}
+        project_dates: dict[str, str] = {}
+        project_ids = sorted({pid for item in manifest for pid in item.project_ids})
+        for project_id in project_ids:
+            readme_path = self.repo_root / "projects" / project_id / "README.md"
+            if readme_path.exists():
+                first_line = readme_path.read_text(encoding="utf-8").splitlines()[0]
+                if first_line.startswith("# "):
+                    project_titles[project_id] = first_line[2:].strip()
+            prov_path = self.repo_root / "projects" / project_id / "provenance.yaml"
+            if prov_path.exists():
+                provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
+                for key in ("updated_at", "created_at", "date_completed"):
+                    if provenance.get(key):
+                        project_dates[project_id] = str(provenance[key])
+                        break
+        return project_titles, project_dates
+
+    def build_synthesis_bundle(
+        self,
+        manifest: list[ResourceManifestItem],
+        findings: list[Finding] | None = None,
+        hypotheses: list[Hypothesis] | None = None,
+    ) -> tuple[KnowledgeSynthesisBundle, Any | None]:
+        """Build the shared synthesis bundle from staged registry and graph artifacts."""
+        if findings is None or hypotheses is None:
+            findings, hypotheses = self._load_staged_entries()
+        if not findings and not hypotheses:
+            return KnowledgeSynthesisBundle(), None
+        graph, communities = self._load_graph_artifacts()
+        project_ids = sorted({pid for item in manifest for pid in item.project_ids})
+        synthesizer = KnowledgeSynthesizer()
+        return synthesizer.synthesize(
+            findings=findings,
+            hypotheses=hypotheses,
+            project_ids=project_ids,
+            graph=graph,
+            communities=communities,
+        ), graph
+
+    def phase4_export_knowledge_graph(
+        self,
+        bundle: KnowledgeSynthesisBundle,
+        graph: Any | None = None,
+    ) -> int:
+        """Export synthesized knowledge into the OpenViking `knowledge-graph/` namespace."""
+        if not bundle.entities and not bundle.hypotheses and not bundle.timeline_events:
+            console.print("  [dim]Phase 4: skipped (empty synthesis bundle)[/]")
+            return 0
+        export_staging = self.staging_root / "knowledge-layer"
+        export_staging.mkdir(parents=True, exist_ok=True)
+        exporter = KnowledgeGraphExporter(bundle=bundle, graph=graph)
+        file_count = exporter.export_all(export_staging)
+        self.uploader.upload(
+            export_staging,
+            build_observatory_root_uri(),
+            reason="Phase 4 knowledge-graph export",
+            wait=False,
+        )
+        relation_count = exporter.create_relations(self.client)
+        console.print(
+            f"  [green]✓[/] Phase 4: {file_count} knowledge-graph files and "
+            f"{relation_count} relations exported"
+        )
+        return file_count
+
+    def phase5_compile_wiki(
+        self,
+        manifest: list[ResourceManifestItem],
+        bundle: KnowledgeSynthesisBundle,
         findings: list[Finding] | None = None,
         hypotheses: list[Hypothesis] | None = None,
     ) -> int:
@@ -422,217 +511,92 @@ class IngestPipeline:
         int
             Number of wiki pages compiled.
         """
-        # Collect entries from staged registry files if not provided
         if findings is None or hypotheses is None:
-            staged_findings: list[Finding] = []
-            staged_hypotheses: list[Hypothesis] = []
-            registry_staging = self.staging_root / "registry"
-            if registry_staging.exists():
-                findings_dir = registry_staging / "findings"
-                if findings_dir.exists():
-                    for f in sorted(findings_dir.glob("*.yaml")):
-                        data = yaml.safe_load(f.read_text(encoding="utf-8"))
-                        if data:
-                            staged_findings.append(Finding.model_validate(data))
-                hyp_dir = registry_staging / "hypotheses"
-                if hyp_dir.exists():
-                    for f in sorted(hyp_dir.glob("*.yaml")):
-                        data = yaml.safe_load(f.read_text(encoding="utf-8"))
-                        if data:
-                            staged_hypotheses.append(Hypothesis.model_validate(data))
-            if findings is None:
-                findings = staged_findings
-            if hypotheses is None:
-                hypotheses = staged_hypotheses
+            findings, hypotheses = self._load_staged_entries()
 
-        if not findings and not hypotheses:
-            console.print("  [dim]Phase 4: skipped (no registry entries)[/]")
+        if not bundle.entities and not bundle.hypotheses and not bundle.topics:
+            console.print("  [dim]Phase 5: skipped (empty synthesis bundle)[/]")
             return 0
 
         wiki_staging = self.staging_root / "wiki"
         wiki_staging.mkdir(parents=True, exist_ok=True)
 
-        # Load graph for cross-linking (built in Phase 3)
-        import networkx as nx
-        graph_path = self.repo_root / "data" / "graph" / "graph.json"
-        graph: nx.MultiDiGraph | None = None
-        communities: dict[str, dict] | None = None
-        if graph_path.exists():
-            import json as _json
-            graph = nx.node_link_graph(_json.loads(graph_path.read_text(encoding="utf-8")))
-            comm_path = self.repo_root / "data" / "graph" / "communities.json"
-            if comm_path.exists():
-                communities = _json.loads(comm_path.read_text(encoding="utf-8"))
-
         wiki_entries: list[WikiEntry] = []
         page_count = 0
-
-        # --- Entity pages ---
-        entity_findings: dict[tuple[str, str], list[Finding]] = {}
-        entity_hypotheses: dict[tuple[str, str], list[Hypothesis]] = {}
-        entity_projects: dict[tuple[str, str], set[str]] = {}
-
-        for f in findings:
-            for ref in f.related_entities:
-                key = (ref.type, ref.label)
-                entity_findings.setdefault(key, []).append(f)
-                entity_projects.setdefault(key, set()).add(f.project_id)
-
-        for h in hypotheses:
-            for ref in h.related_entities:
-                key = (ref.type, ref.label)
-                entity_hypotheses.setdefault(key, []).append(h)
-                for pid in h.project_ids:
-                    entity_projects.setdefault(key, set()).add(pid)
-
-        all_entity_keys = set(entity_findings) | set(entity_hypotheses)
-        project_findings: dict[str, list[Finding]] = {}
-        project_hypotheses: dict[str, list[Hypothesis]] = {}
-        project_entities: dict[str, list[dict]] = {}
-        for f in findings:
-            project_findings.setdefault(f.project_id, []).append(f)
-            for ref in f.related_entities:
-                project_entities.setdefault(f.project_id, []).append(
-                    {"type": ref.type, "label": ref.label}
-                )
-        for h in hypotheses:
-            for pid in h.project_ids:
-                project_hypotheses.setdefault(pid, []).append(h)
-        topic_ids = sorted(set(project_findings) | set(project_hypotheses))
-
-        # Deduplicate project_entities
-        for pid in project_entities:
-            seen = set()
-            deduped = []
-            for ent in project_entities[pid]:
-                key = (ent["type"], ent["label"])
-                if key not in seen:
-                    seen.add(key)
-                    deduped.append(ent)
-            project_entities[pid] = deduped
-
-        total_pages = len(all_entity_keys) + len(hypotheses) + len(topic_ids) + 1
+        findings_by_id = {finding.finding_id: finding for finding in findings}
+        hypotheses_by_id = {hypothesis.hypothesis_id: hypothesis for hypothesis in hypotheses}
+        total_pages = len(bundle.entities) + len(bundle.hypotheses) + len(bundle.topics) + 1
 
         with _make_progress() as progress:
-            task = progress.add_task("Phase 4: Compiling wiki", total=total_pages)
+            task = progress.add_task("Phase 5: Compiling wiki", total=total_pages)
 
             from observatory_context.uris import _ENTITY_TYPE_PLURALS
-            from observatory_context.graph.builder import _entity_node_id
 
-            for entity_type, label in sorted(all_entity_keys):
-                slug = slugify(label)
-                progress.update(task, description=f"Phase 4: entity/{slug}")
-                e_findings = entity_findings.get((entity_type, label), [])
-                e_hypotheses = entity_hypotheses.get((entity_type, label), [])
-                e_projects = sorted(entity_projects.get((entity_type, label), set()))
-
-                # Get related entities from graph
-                related_entities: list[dict] = []
-                community_info: dict | None = None
-                if graph is not None:
-                    nid = _entity_node_id(entity_type, label)
-                    if nid in graph:
-                        # Find RELATED_TO neighbors
-                        for _, neighbor, data in graph.edges(nid, data=True):
-                            if data.get("relation") == "RELATED_TO" and neighbor in graph.nodes:
-                                ndata = graph.nodes[neighbor]
-                                if ndata.get("kind") == "entity":
-                                    related_entities.append({
-                                        "type": ndata.get("entity_type", "concept"),
-                                        "label": ndata.get("canonical_name", neighbor),
-                                        "weight": data.get("weight", 1),
-                                    })
-                        # Get community info
-                        if communities:
-                            comm_id = str(graph.nodes[nid].get("community", ""))
-                            if comm_id in communities:
-                                c = communities[comm_id]
-                                community_info = {
-                                    "name": c.get("name", f"Community {comm_id}"),
-                                    "size": len(c.get("members", [])),
-                                }
-
-                content = compile_entity_page(
-                    entity_type=entity_type,
-                    slug=slug,
-                    label=label,
-                    findings=e_findings,
-                    hypotheses=e_hypotheses,
-                    project_ids=e_projects,
-                    related_entities=related_entities,
-                    community=community_info,
+            for entity in bundle.entities:
+                progress.update(task, description=f"Phase 5: entity/{entity.slug}")
+                content = compile_entity_page_from_synthesis(
+                    entity,
+                    findings_by_id=findings_by_id,
+                    hypotheses_by_id=hypotheses_by_id,
                 )
-                plural = _ENTITY_TYPE_PLURALS.get(entity_type, f"{entity_type}s")
-                rel_path = f"entities/{plural}/{slug}.md"
+                plural = _ENTITY_TYPE_PLURALS.get(entity.entity_type, f"{entity.entity_type}s")
+                rel_path = f"entities/{plural}/{entity.slug}.md"
                 self.uploader.stage(wiki_staging, rel_path, content)
                 wiki_entries.append(
                     WikiEntry(
-                        slug=slug,
+                        slug=entity.slug,
                         section=f"entities/{plural}",
-                        summary=label,
-                        source_count=len(e_findings),
-                        coverage="high" if len(e_findings) >= 5 else "medium" if len(e_findings) >= 2 else "low",
+                        summary=entity.canonical_name,
+                        source_count=len(entity.finding_ids),
+                        coverage=entity.coverage,
                     )
                 )
                 page_count += 1
                 progress.advance(task)
 
-            # --- Hypothesis pages ---
-            for h in hypotheses:
-                slug = slugify(h.hypothesis_id)
-                progress.update(task, description=f"Phase 4: hypothesis/{slug}")
-                supporting = [f for f in findings if h.hypothesis_id in (f.evidence_ids or [])]
-                if not supporting:
-                    supporting = [f for f in findings if f.project_id in h.project_ids]
-                content = compile_hypothesis_page(
-                    hypothesis=h,
-                    supporting_findings=supporting,
+            for hypothesis in bundle.hypotheses:
+                progress.update(task, description=f"Phase 5: hypothesis/{hypothesis.slug}")
+                content = compile_hypothesis_page_from_synthesis(
+                    hypothesis,
+                    findings_by_id=findings_by_id,
+                    hypotheses_by_id=hypotheses_by_id,
                 )
-                rel_path = f"hypotheses/{slug}.md"
+                rel_path = f"hypotheses/{hypothesis.slug}.md"
                 self.uploader.stage(wiki_staging, rel_path, content)
                 wiki_entries.append(
                     WikiEntry(
-                        slug=slug,
+                        slug=hypothesis.slug,
                         section="hypotheses",
-                        summary=h.statement[:80],
-                        source_count=len(supporting),
-                        coverage="high" if len(supporting) >= 5 else "medium" if len(supporting) >= 2 else "low",
+                        summary=hypothesis.statement[:80],
+                        source_count=len(hypothesis.supporting_findings),
+                        coverage=hypothesis.coverage,
                     )
                 )
                 page_count += 1
                 progress.advance(task)
 
-            # --- Topic pages ---
-            for pid in topic_ids:
-                slug = slugify(pid)
-                progress.update(task, description=f"Phase 4: topic/{slug}")
-                t_findings = project_findings.get(pid, [])
-                t_hypotheses = project_hypotheses.get(pid, [])
-                t_entities = project_entities.get(pid, [])
-                content = compile_topic_page(
-                    slug=slug,
-                    title=pid,
-                    findings=t_findings,
-                    hypotheses=t_hypotheses,
-                    project_ids=[pid],
-                    entities_studied=t_entities,
+            for topic in bundle.topics:
+                progress.update(task, description=f"Phase 5: topic/{topic.slug}")
+                content = compile_topic_page_from_synthesis(
+                    topic,
+                    findings_by_id=findings_by_id,
+                    hypotheses_by_id=hypotheses_by_id,
                 )
-                rel_path = f"topics/{slug}.md"
+                rel_path = f"topics/{topic.slug}.md"
                 self.uploader.stage(wiki_staging, rel_path, content)
                 wiki_entries.append(
                     WikiEntry(
-                        slug=slug,
+                        slug=topic.slug,
                         section="topics",
-                        summary=f"Findings from {pid}",
-                        source_count=len(t_findings),
-                        coverage="high" if len(t_findings) >= 5 else "medium" if len(t_findings) >= 2 else "low",
+                        summary=topic.title,
+                        source_count=len(topic.finding_ids),
+                        coverage="high" if len(topic.finding_ids) >= 5 else "medium" if len(topic.finding_ids) >= 2 else "low",
                     )
                 )
                 page_count += 1
                 progress.advance(task)
 
-            # --- Index page ---
-            progress.update(task, description="Phase 4: index")
+            progress.update(task, description="Phase 5: index")
             index_content = build_index_markdown(wiki_entries)
             self.uploader.stage(wiki_staging, "index.md", index_content)
             page_count += 1
@@ -643,12 +607,22 @@ class IngestPipeline:
         self.uploader.upload(
             wiki_staging,
             target_uri,
-            reason="Phase 4 wiki compilation",
+            reason="Phase 5 wiki compilation",
             wait=False,
         )
 
-        console.print(f"  [green]✓[/] Phase 4: {page_count} wiki pages compiled")
+        console.print(f"  [green]✓[/] Phase 5: {page_count} wiki pages compiled")
         return page_count
+
+    def phase3_compile_wiki(
+        self,
+        manifest: list[ResourceManifestItem],
+        findings: list[Finding] | None = None,
+        hypotheses: list[Hypothesis] | None = None,
+    ) -> int:
+        """Compatibility wrapper for older tests and call sites."""
+        bundle, _graph = self.build_synthesis_bundle(manifest, findings=findings, hypotheses=hypotheses)
+        return self.phase5_compile_wiki(manifest, bundle, findings=findings, hypotheses=hypotheses)
 
     def phase5_update_index_and_log(
         self, project_ids: list[str], phase_results: dict[str, int]
@@ -670,18 +644,24 @@ class IngestPipeline:
                     uri=log_uri,
                     content=entry,
                     metadata={"kind": "log", "projects": project_ids},
-                    reason="Phase 4 — update wiki log",
+                    reason="Phase 6 — update wiki log",
                     wait=False,
                 )
                 break
             except Exception as exc:
                 if "lock" in str(exc).lower() and attempt < 7:
                     delay = min(2 ** attempt, 30)
-                    logger.warning("Phase 4 lock contention, retrying in %ds (attempt %d/8)...", delay, attempt + 1)
+                    logger.warning("Phase 6 lock contention, retrying in %ds (attempt %d/8)...", delay, attempt + 1)
                     time.sleep(delay)
                 else:
-                    logger.warning("Phase 4 log entry failed (non-critical): %s", exc)
+                    logger.warning("Phase 6 log entry failed (non-critical): %s", exc)
                     break
+
+    def phase4_update_index_and_log(
+        self, project_ids: list[str], phase_results: dict[str, int]
+    ) -> None:
+        """Compatibility wrapper for older tests and call sites."""
+        self.phase5_update_index_and_log(project_ids, phase_results)
 
     def build_log_entry(
         self,
@@ -724,7 +704,7 @@ class IngestPipeline:
         resume: bool = True,
         extractor: Any | None = None,
     ) -> dict[str, int]:
-        """Execute the full 5-phase pipeline.
+        """Execute the full synthesis-backed pipeline.
 
         Parameters
         ----------
@@ -734,12 +714,13 @@ class IngestPipeline:
             Pass to phase 1 to skip already-ingested resources.
         extractor
             A ``CBORGExtractor`` for phase 2 knowledge extraction.
-            If ``None``, phases 2-4 are skipped gracefully.
+            If ``None``, phases 2-5 are skipped gracefully.
 
         Returns
         -------
         dict[str, int]
-            Counts per phase: ``corpus``, ``registry``, ``graph``, ``wiki``.
+            Counts per phase: ``corpus``, ``registry``, ``graph``,
+            ``knowledge_graph``, ``wiki``.
         """
         console.print("\n[bold]Observatory Wiki V2 Ingest[/]")
         console.print(f"Projects: {', '.join(project_ids) if project_ids else 'all'}\n")
@@ -753,13 +734,17 @@ class IngestPipeline:
         # Phase 3: resolve entities and build knowledge graph
         graph_count = self.phase3_build_graph(manifest)
 
-        # Phase 4: compile wiki pages from registry entries
-        wiki_count = self.phase4_compile_wiki(manifest)
+        bundle, graph = self.build_synthesis_bundle(manifest)
+
+        knowledge_graph_count = self.phase4_export_knowledge_graph(bundle, graph=graph)
+
+        wiki_count = self.phase5_compile_wiki(manifest, bundle)
 
         phase_results = {
             "corpus": corpus_count,
             "registry": registry_count,
             "graph": graph_count,
+            "knowledge_graph": knowledge_graph_count,
             "wiki": wiki_count,
         }
 

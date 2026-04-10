@@ -4,12 +4,22 @@ OpenViking is the single source of truth for all observatory knowledge data.
 
 ## URI hierarchy
 
-The observatory uses five top-level namespaces under
+The observatory uses six top-level namespaces under
 `viking://resources/observatory/`:
 
 ```text
 viking://resources/observatory/
-├── wiki/                           # Compiled knowledge (agent's primary surface)
+├── knowledge-graph/                # OpenViking-native tiered knowledge layer
+│   ├── entities/{type}/{slug}/
+│   │   ├── .abstract.md
+│   │   ├── .overview.md
+│   │   └── profile.yaml
+│   ├── hypotheses/{slug}/
+│   │   ├── .abstract.md
+│   │   ├── .overview.md
+│   │   └── hypothesis.yaml
+│   └── timeline/events.yaml
+├── wiki/                           # Compiled narrative view from the same synthesis bundle
 │   ├── index.md                    # Master catalog — read this first
 │   ├── log.md                      # Append-only ingest activity log
 │   ├── topics/{slug}.md            # Cross-project synthesis pages
@@ -50,8 +60,11 @@ viking://resources/observatory/
 | `figure` | Project figure files | `corpus/{id}/figures/{name}` |
 | `finding` | Extracted finding (YAML) | `registry/findings/{id}.yaml` |
 | `hypothesis` | Extracted hypothesis (YAML) | `registry/hypotheses/{id}.yaml` |
+| `entity_profile` | Tiered OpenViking entity profile | `knowledge-graph/entities/{type}/{slug}/profile.yaml` |
+| `hypothesis` | Tiered OpenViking hypothesis profile | `knowledge-graph/hypotheses/{slug}/hypothesis.yaml` |
+| `timeline` | Aggregated timeline events | `knowledge-graph/timeline/events.yaml` |
 | `entity_profile` | Compiled entity wiki page | `wiki/entities/{type}/{slug}.md` |
-| `topic_synthesis` | Cross-project synthesis | `wiki/topics/{slug}.md` |
+| `topic_synthesis` | Cross-project synthesis compiled from graph communities | `wiki/topics/{slug}.md` |
 | `hypothesis_tracker` | Hypothesis status page | `wiki/hypotheses/{id}.md` |
 | `log` | Ingest activity log | `wiki/log.md` |
 
@@ -76,7 +89,17 @@ last_compiled: 2026-04-08
 …
 ```
 
-Kinds: `entity_profile`, `topic_synthesis`, `hypothesis_tracker`.
+Kinds: `entity_profile`, `topic_synthesis`, `hypothesis_tracker`, `timeline`.
+
+## Synthesis rule
+
+`knowledge-graph/` and `wiki/` are compiled outputs from the same synthesized
+cross-project model built from registry entries plus NetworkX graph artifacts.
+The wiki is not an input to future synthesis.
+
+NetworkX is the canonical internal graph artifact used to compute related
+entities, clusters, and cross-project structure. OpenViking is the canonical
+retrieval surface for agents.
 
 ## Registry schema
 

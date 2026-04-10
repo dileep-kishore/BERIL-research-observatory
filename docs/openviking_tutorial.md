@@ -89,7 +89,7 @@ Full ingest (recommended for first run):
 uv run scripts/viking_ingest.py --no-resume
 ```
 
-This runs a four-phase pipeline:
+This runs a synthesis-backed pipeline:
 
 ### Phase 1 — Corpus Upload
 
@@ -104,9 +104,27 @@ For each project with a REPORT.md, runs CBORG extraction (default model:
 hypotheses, and timeline events into structured YAML registry entries.
 Uploads to `viking://resources/observatory/registry/`.
 
-### Phase 3 — Wiki Compilation
+### Phase 3 — Graph Build
 
-Compiles wiki pages from registry entries:
+Resolves extracted entities, builds the persistent NetworkX graph under
+`data/graph/`, runs community detection, and writes `GRAPH_REPORT.md`.
+
+### Phase 4 — Knowledge Synthesis + `knowledge-graph/` Export
+
+Builds a shared cross-project synthesis bundle from registry entries plus graph
+artifacts, then exports the OpenViking-native tiered namespace:
+
+- **Entity directories** in `knowledge-graph/entities/{type}/{slug}/`
+- **Hypothesis directories** in `knowledge-graph/hypotheses/{slug}/`
+- **Timeline events** in `knowledge-graph/timeline/events.yaml`
+- **OpenViking relations** derived from graph connectivity
+
+Uploads the staged `knowledge-graph/` tree to
+`viking://resources/observatory/`.
+
+### Phase 5 — Wiki Compilation
+
+Compiles wiki pages from the same synthesized bundle:
 - **Entity profiles** in `wiki/entities/{type}/{slug}.md`
 - **Topic synthesis** pages in `wiki/topics/{slug}.md`
 - **Hypothesis trackers** in `wiki/hypotheses/{id}.md`
@@ -114,16 +132,17 @@ Compiles wiki pages from registry entries:
 
 Uploads to `viking://resources/observatory/wiki/`.
 
-### Phase 4 — Log Update
+### Phase 6 — Log Update
 
 Appends a timestamped ingest record to `wiki/log.md`. Retries with
-exponential backoff if the server holds a lock from Phase 3 processing.
+exponential backoff if the server holds a lock from prior processing.
 
 ### Server-side processing
 
-After upload, OpenViking processes each resource asynchronously:
-embeddings (OpenAI) and VLM file summaries (CBORG). With CBORG's
-~20 req/min rate limit, processing 1000+ resources takes 30+ minutes.
+After upload, OpenViking processes each resource asynchronously. The knowledge
+layer described here does not depend on any VLM step; it is built from
+structured registry data plus NetworkX graph artifacts and is queryable
+immediately after export.
 
 Use `--wait` to block until processing completes, or omit it — data is
 queryable immediately, summaries populate in the background.
@@ -165,6 +184,11 @@ uv run scripts/query_knowledge_unified.py project rbtnseq_pooled_fitness
 # Browse figures and reusable data
 uv run scripts/query_knowledge_unified.py figures
 uv run scripts/query_knowledge_unified.py data
+
+# Browse synthesized graph entities
+uv run scripts/query_knowledge_unified.py entities organism --tier L1
+uv run scripts/query_knowledge_unified.py hypotheses supported
+uv run scripts/query_knowledge_unified.py timeline
 
 # Content search (grep/glob across resources)
 uv run scripts/query_knowledge_unified.py grep "RB-TnSeq"
@@ -286,10 +310,10 @@ observatory_context/
 │   ├── store.py            # YAML read/write via OpenViking
 │   └── extract.py          # CBORG extraction → registry entries
 │
-└── ingest/                 # 4-phase ingest pipeline
+└── ingest/                 # synthesis-backed ingest pipeline
     ├── manifest.py         # Resource manifest builder
     ├── batch.py            # Batch upload orchestration
-    └── pipeline.py         # Phase 1–4 pipeline orchestrator
+    └── pipeline.py         # Corpus -> registry -> graph -> synthesis -> export
 ```
 
 ## 7. Run repository verification

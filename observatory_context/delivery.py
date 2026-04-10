@@ -349,6 +349,39 @@ class ContextDelivery:
             try:
                 rel_entries = self.client.list_resources(f"{current_uri}/relations")
             except Exception:
+                rel_entries = []
+
+            if not rel_entries and hasattr(self.client, "relations"):
+                try:
+                    linked = self.client.relations(current_uri)
+                except Exception:
+                    linked = []
+                for rel in linked:
+                    target_uri = str(rel.get("uri", ""))
+                    if not target_uri:
+                        continue
+                    edge_key = (current_uri, "related_to", target_uri)
+                    if edge_key not in seen_edges:
+                        seen_edges.add(edge_key)
+                        edges.append(
+                            RelationEdge(
+                                subject_uri=current_uri,
+                                predicate="related_to",
+                                object_uri=target_uri,
+                                evidence=str(rel.get("reason", "")),
+                                confidence="moderate",
+                            )
+                        )
+                    if target_uri in seen_entities:
+                        continue
+                    seen_entities.add(target_uri)
+                    try:
+                        connected_item = self._load_item(target_uri, tier)
+                    except Exception:
+                        continue
+                    connected.append(connected_item)
+                    if remaining_hops > 1:
+                        walk(target_uri, remaining_hops - 1)
                 return
 
             for entry in rel_entries:

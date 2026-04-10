@@ -3044,6 +3044,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "networkx" },
     { name = "openviking" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -3088,6 +3089,7 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'graph'", specifier = ">=1.0.0" },
     { name = "minio", marker = "extra == 'ingest'", specifier = ">=7.2.0" },
     { name = "nbconvert", marker = "extra == 'ingest'" },
+    { name = "networkx", specifier = ">=3.2" },
     { name = "networkx", marker = "extra == 'graph'", specifier = ">=3.2" },
     { name = "openviking", specifier = ">=0.3.4" },
     { name = "pandas", marker = "extra == 'berdl'" },
