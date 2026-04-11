@@ -105,6 +105,9 @@ data/.openviking.log
 data/_system/
 data/vectordb/
 data/viking/
+data/graph/
+data/ingest/
 .superpowers/
 .kg_cache/
 /data/.openviking-hook.pid
+/data/temp/upload
