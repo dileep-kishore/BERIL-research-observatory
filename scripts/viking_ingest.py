@@ -84,6 +84,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", default=None,
         help="Override CBORG model for extraction",
     )
+    parser.add_argument(
+        "--from-scratch", action="store_true",
+        help="Clear local ingest and graph state before starting a new run.",
+    )
+    parser.add_argument(
+        "--restart-from",
+        choices=("corpus", "registry", "graph", "knowledge_graph", "wiki", "log"),
+        default=None,
+        help="Force phases from this point onward to rerun for the current scope.",
+    )
+    parser.add_argument(
+        "--no-checkpoint-resume", action="store_true",
+        help="Do not auto-resume the latest incomplete matching run.",
+    )
     return parser
 
 
@@ -202,6 +216,9 @@ def main(argv: list[str] | None = None) -> int:
         project_ids=args.project or None,
         resume=not args.no_resume,
         extractor=extractor,
+        allow_checkpoint_resume=not args.no_checkpoint_resume,
+        restart_from=args.restart_from,
+        from_scratch=args.from_scratch,
     )
 
     if args.wait:

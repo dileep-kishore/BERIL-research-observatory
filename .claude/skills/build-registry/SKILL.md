@@ -14,7 +14,7 @@ Re-ingest observatory resources into OpenViking so that `/knowledge` queries ref
 ```
 /build-registry              — incremental ingest (resources + knowledge graph)
 /build-registry --check      — verify ingest status without re-ingesting
-/build-registry --clean      — full rebuild from scratch (wipes graph + cache)
+/build-registry --clean      — full rebuild from local ingest state
 ```
 
 ## Workflow
@@ -24,63 +24,49 @@ Re-ingest observatory resources into OpenViking so that `/knowledge` queries ref
 Run:
 
 ```bash
-uv run scripts/viking_ingest.py --rebuild-graph --wait
+uv run scripts/viking_ingest.py --wait --wait-timeout 7200
 ```
 
-This does three phases:
+This runs the synthesis-backed pipeline:
 1. **Phase 1** — Upload project resources (README, REPORT, provenance, figures). Uses `--resume` by default to skip existing resources.
-2. **Phase 2** — Extract knowledge graph via CBORG (gpt-5.4-mini). Uses a local cache (`.kg_cache/`) to skip projects whose REPORT.md and provenance.yaml haven't changed since last extraction. Entities and hypotheses are deduplicated and merged across projects.
-3. **Phase 3** — Generate L0/L1 tier summaries for entity directories and hypotheses.
-
-The knowledge graph is uploaded as a single batch (one `add_resource` call with a directory), replacing the previous graph atomically.
+2. **Phase 2** — Extract registry entries via CBORG (gpt-5.4-mini) and persist per-project snapshots under `data/ingest/registry/projects/`.
+3. **Phase 3** — Rebuild the persistent NetworkX graph from all durable registry snapshots.
+4. **Phase 4** — Export the OpenViking `knowledge-graph/` namespace.
+5. **Phase 5** — Compile the wiki from the same synthesis bundle.
+6. **Phase 6** — Update the ingest log.
 
 Requires `CBORG_API_KEY` env var.
 
-### Knowledge Graph Only
-
-Skip Phase 1 resource upload, only rebuild the knowledge graph:
+### Full Rebuild from Scratch
 
 ```bash
-uv run scripts/viking_ingest.py --graph-only --wait
-```
-
-This is the fastest option when project resources are already uploaded and only the graph needs updating (e.g., after editing a REPORT.md).
-
-### V2 Pipeline (Wiki-Based Architecture)
-
-For the new wiki-based architecture, use the `--v2` flag:
-
-```bash
-uv run scripts/viking_ingest.py --v2 --wait
-```
-
-This runs the full 4-phase pipeline:
-1. **Corpus** — upload project resources (README, REPORT, provenance, figures)
-2. **Registry** — extract knowledge graph via CBORG (entities, hypotheses, relations)
-3. **Wiki** — compile topic pages from the registry into a browsable wiki
-4. **Log** — record ingest provenance and update change log
-
-Requires both `CBORG_API_KEY` (registry extraction and wiki compilation) and `OPENAI_API_KEY` (embeddings).
-
-Use `--v2` for new installations or after migrating from the legacy graph-only pipeline. The legacy `--rebuild-graph` path remains supported for existing setups.
-
-### Full Rebuild from Scratch (Legacy)
-
-```bash
-uv run scripts/viking_ingest.py --no-resume --rebuild-graph --clean --wait
+uv run scripts/viking_ingest.py --no-resume --from-scratch --wait --wait-timeout 7200
 ```
 
 - `--no-resume`: re-uploads all project resources
-- `--clean`: wipes the existing knowledge graph in OpenViking and the local extraction cache
-- All projects are re-extracted via CBORG
+- `--from-scratch`: wipes local durable ingest state and graph artifacts
+- All projects are re-extracted and the global knowledge layer is rebuilt
 
 ### Single Project Update
 
 ```bash
-uv run scripts/viking_ingest.py --graph-only --project <project_id> --wait
+uv run scripts/viking_ingest.py --project <project_id> --wait --wait-timeout 7200
 ```
 
-Note: with `--project`, only that project's resources are in scope, but the cached extractions for all other projects are still merged into the graph to maintain completeness.
+With `--project`, only that project's corpus and extraction are in scope, but
+the graph, `knowledge-graph/`, and wiki are rebuilt from all persisted
+registry snapshots to maintain a correct global knowledge layer.
+
+### Resume a Failed Run
+
+Re-run the same command. The latest incomplete matching run resumes
+automatically from the next incomplete phase.
+
+To force a later phase to rerun:
+
+```bash
+uv run scripts/viking_ingest.py --restart-from graph --wait --wait-timeout 7200
+```
 
 ### Check Status
 
@@ -104,16 +90,16 @@ To use a specific CBORG model: `--model claude-haiku` or `--model gpt-5.4-mini`
 - **Called by**: `/synthesize` (Step 7.6), `/submit` (Step 2), `/berdl_start` (Phase B)
 - **Generates for**: `/knowledge` (query skill), `/suggest-research` (landscape analysis)
 - **Source of truth**: OpenViking (all queries go through OpenViking)
-- **Local cache**: `.kg_cache/` stores per-project extraction results for incremental rebuilds
+- **Local durable state**: `data/ingest/` stores per-project registry snapshots and run checkpoints
 
 ## When to Re-ingest
 
-Run an incremental ingest (`--graph-only --wait`) when:
+Run an incremental ingest (`--wait --wait-timeout 7200`) when:
 - A project's REPORT.md or provenance.yaml changed
 - A new project was added
 - After running `/synthesize` on a project
 
-Run a full rebuild (`--no-resume --rebuild-graph --clean --wait`) when:
+Run a full rebuild (`--no-resume --from-scratch --wait --wait-timeout 7200`) when:
 - OpenViking data store was wiped or corrupted
 - After merging branches that modified many projects
 - When `/knowledge` queries return unexpected results

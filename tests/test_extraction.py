@@ -53,3 +53,39 @@ def test_build_extraction_prompt_includes_report_and_provenance() -> None:
     assert "Gene X knockout reduced fitness." in prompt
     assert "essential_genome" in prompt
     assert "2024-01-01" in prompt
+
+
+def test_extract_knowledge_normalizes_known_predicates_and_skips_invalid_ones() -> None:
+    extractor = _make_extractor()
+    extractor._chat = lambda **_: """
+{
+  "entities": [
+    {"type": "gene", "id": "gene-a", "name": "Gene A"},
+    {"type": "pathway", "id": "pathway-b", "name": "Pathway B"},
+    {"type": "concept", "id": "concept-c", "name": "Concept C"}
+  ],
+  "relations": [
+    {
+      "subject": "gene-a",
+      "predicate": "requires",
+      "object": "pathway-b",
+      "evidence": "Required in assay",
+      "confidence": "high"
+    },
+    {
+      "subject": "gene-a",
+      "predicate": "does_not_exist",
+      "object": "concept-c",
+      "evidence": "Bad predicate",
+      "confidence": "low"
+    }
+  ],
+  "hypotheses": [],
+  "timeline_events": []
+}
+"""
+
+    extraction = extractor.extract_knowledge("report", {"project": "x"})
+
+    assert len(extraction.relations) == 1
+    assert extraction.relations[0].predicate == "required_for"

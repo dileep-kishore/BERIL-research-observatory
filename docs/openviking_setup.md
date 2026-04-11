@@ -19,10 +19,13 @@ uv run openviking-server --config "$OPENVIKING_CONFIG_FILE"
 uv run scripts/viking_server_healthcheck.py
 
 # Full ingest (first time)
-uv run scripts/viking_ingest.py --no-resume
+uv run scripts/viking_ingest.py --no-resume --from-scratch --wait --wait-timeout 7200
 
 # Incremental update (after editing projects)
-uv run scripts/viking_ingest.py
+uv run scripts/viking_ingest.py --wait --wait-timeout 7200
+
+# Single project update
+uv run scripts/viking_ingest.py --project <project_id> --wait --wait-timeout 7200
 ```
 
 ## Required environment variables
@@ -43,6 +46,9 @@ then repo-local `.env`.
 | `--wait` | Block until server finishes processing (slow — see below) |
 | `--wait-timeout S` | Maximum seconds to wait when `--wait` is set |
 | `--project X` | Limit to specific project(s), repeatable |
+| `--from-scratch` | Clear local durable ingest state and graph artifacts before running |
+| `--restart-from PHASE` | Force rerun from `corpus`, `registry`, `graph`, `knowledge_graph`, `wiki`, or `log` |
+| `--no-checkpoint-resume` | Do not auto-resume the latest incomplete matching run |
 | `--dry-run` | Preview manifest without uploading |
 | `--check` | Verify all expected resources are present |
 | `--fix` | Re-ingest missing resources |
@@ -52,6 +58,10 @@ then repo-local `.env`.
 asynchronously, so large rebuilds can still take a while even after the
 pipeline finishes staging and uploading files. Omit `--wait` for faster
 runs if you do not need a blocking confirmation.
+
+**Checkpointing**: failed runs now resume automatically from the next
+incomplete phase for the same project scope. Re-run the same command to
+continue, or use `--restart-from` to force a later phase to rebuild.
 
 ## Verification
 

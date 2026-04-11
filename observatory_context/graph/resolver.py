@@ -20,14 +20,26 @@ from observatory_context.graph.aliases import GENUS_ABBREVIATIONS, load_aliases
 
 logger = logging.getLogger(__name__)
 
-_ENTITY_TYPES = Literal["organism", "gene", "pathway", "method", "concept"]
+_ENTITY_TYPES = Literal[
+    "organism",
+    "gene",
+    "pathway",
+    "condition",
+    "environment",
+    "method",
+    "dataset",
+    "concept",
+]
 
 # Similarity thresholds per entity type
 _SIMILARITY_THRESHOLDS: dict[str, float] = {
     "organism": 0.90,
     "gene": 0.85,
     "pathway": 0.85,
+    "condition": 0.80,
+    "environment": 0.80,
     "method": 0.85,
+    "dataset": 0.85,
     "concept": 0.80,
 }
 
@@ -96,7 +108,8 @@ class EntityResolver:
         Parameters
         ----------
         entity_type
-            One of ``organism``, ``gene``, ``pathway``, ``method``, ``concept``.
+            One of ``organism``, ``gene``, ``pathway``, ``condition``,
+            ``environment``, ``method``, ``dataset``, ``concept``.
         raw_label
             The raw entity name as extracted.
 

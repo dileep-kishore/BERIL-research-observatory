@@ -7,6 +7,7 @@ import logging
 from typing import Literal
 
 import httpx
+import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,35 @@ _PREDICATES = Literal[
     "produces", "degrades", "regulates", "inhibits",
     "associated_with", "studied_in", "contradicts", "supports",
 ]
+
+_ENTITY_TYPE_ALIASES = {
+    "organisms": "organism",
+    "genes": "gene",
+    "pathways": "pathway",
+    "conditions": "condition",
+    "environments": "environment",
+    "methods": "method",
+    "datasets": "dataset",
+    "concepts": "concept",
+}
+
+_PREDICATE_ALIASES = {
+    "require": "required_for",
+    "required": "required_for",
+    "requires": "required_for",
+    "required_by": "required_for",
+    "related_to": "associated_with",
+    "related_with": "associated_with",
+    "associated": "associated_with",
+    "associated_to": "associated_with",
+    "associated": "associated_with",
+    "present_in": "studied_in",
+    "found_in": "studied_in",
+    "observed_in": "studied_in",
+}
+
+_VALID_ENTITY_TYPES = set(_ENTITY_TYPES.__args__)  # type: ignore[attr-defined]
+_VALID_PREDICATES = set(_PREDICATES.__args__)  # type: ignore[attr-defined]
 
 
 class Entity(BaseModel):
@@ -237,9 +267,10 @@ class CBORGExtractor:
             max_tokens=self._max_output_tokens,
         )
         try:
-            data = json.loads(raw)
+            data = self._parse_payload(raw)
+            data = self._sanitize_payload(data)
             return EntityExtraction.model_validate(data)
-        except (json.JSONDecodeError, ValidationError) as exc:
+        except (json.JSONDecodeError, ValidationError, TypeError) as exc:
             logger.warning("Failed to parse extraction response: %s", exc)
             return EntityExtraction()
 
@@ -370,6 +401,81 @@ class CBORGExtractor:
 
         response.raise_for_status()  # raise on final failure
         return ""  # unreachable
+
+    def _parse_payload(self, raw: str) -> dict:
+        """Parse a model response into a dict."""
+        text = raw.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        candidates = [text]
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and start < end:
+            candidates.append(text[start:end + 1])
+
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict):
+                    return data
+            except json.JSONDecodeError as exc:
+                last_error = exc
+
+            try:
+                data = yaml.safe_load(candidate)
+                if isinstance(data, dict):
+                    return data
+            except yaml.YAMLError as exc:
+                last_error = exc
+
+        if last_error is not None:
+            raise last_error
+        raise TypeError("Extraction response did not decode to an object")
+
+    def _sanitize_payload(self, data: dict) -> dict:
+        """Normalize partially-invalid model output before schema validation."""
+        payload = dict(data)
+        payload["entities"] = self._sanitize_entities(payload.get("entities", []))
+        payload["relations"] = self._sanitize_relations(payload.get("relations", []))
+        return payload
+
+    def _sanitize_entities(self, entities: list[dict]) -> list[dict]:
+        sanitized: list[dict] = []
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+            raw_type = str(entity.get("type", "")).strip().lower().replace("-", "_").replace(" ", "_")
+            normalized_type = _ENTITY_TYPE_ALIASES.get(raw_type, raw_type)
+            if normalized_type not in _VALID_ENTITY_TYPES:
+                logger.warning("Skipping entity with unsupported type: %s", entity.get("type"))
+                continue
+            cleaned = dict(entity)
+            cleaned["type"] = normalized_type
+            sanitized.append(cleaned)
+        return sanitized
+
+    def _sanitize_relations(self, relations: list[dict]) -> list[dict]:
+        sanitized: list[dict] = []
+        for relation in relations:
+            if not isinstance(relation, dict):
+                continue
+            raw_predicate = str(relation.get("predicate", "")).strip().lower()
+            normalized = raw_predicate.replace("-", "_").replace(" ", "_")
+            normalized = _PREDICATE_ALIASES.get(normalized, normalized)
+            if normalized not in _VALID_PREDICATES:
+                logger.warning("Skipping relation with unsupported predicate: %s", relation.get("predicate"))
+                continue
+            cleaned = dict(relation)
+            cleaned["predicate"] = normalized
+            sanitized.append(cleaned)
+        return sanitized
 
     # ------------------------------------------------------------------
     # Operational knowledge enrichment

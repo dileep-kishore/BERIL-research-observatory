@@ -36,9 +36,24 @@ def test_ingest_skips_existing_resources_by_default(
             self.client = client
             self.repo_root = repo_root
 
-        def run(self, project_ids=None, resume=True, extractor=None):
+        def run(
+            self,
+            project_ids=None,
+            resume=True,
+            extractor=None,
+            allow_checkpoint_resume=True,
+            restart_from=None,
+            from_scratch=False,
+        ):
             run_calls.append(
-                {"project_ids": project_ids, "resume": resume, "extractor": extractor}
+                {
+                    "project_ids": project_ids,
+                    "resume": resume,
+                    "extractor": extractor,
+                    "allow_checkpoint_resume": allow_checkpoint_resume,
+                    "restart_from": restart_from,
+                    "from_scratch": from_scratch,
+                }
             )
             return {"corpus": 1, "registry": 0, "graph": 0, "knowledge_graph": 0, "wiki": 0}
 
@@ -59,7 +74,14 @@ def test_ingest_skips_existing_resources_by_default(
 
     assert viking_ingest.main([]) == 0
 
-    assert run_calls == [{"project_ids": None, "resume": True, "extractor": None}]
+    assert run_calls == [{
+        "project_ids": None,
+        "resume": True,
+        "extractor": None,
+        "allow_checkpoint_resume": True,
+        "restart_from": None,
+        "from_scratch": False,
+    }]
     output = capsys.readouterr().out
     assert "Done!" in output
 
@@ -79,7 +101,15 @@ def test_ingest_handles_wait_timeout_gracefully(
             self.client = client
             self.repo_root = repo_root
 
-        def run(self, project_ids=None, resume=True, extractor=None):
+        def run(
+            self,
+            project_ids=None,
+            resume=True,
+            extractor=None,
+            allow_checkpoint_resume=True,
+            restart_from=None,
+            from_scratch=False,
+        ):
             return {"corpus": 1, "registry": 0, "graph": 0, "knowledge_graph": 0, "wiki": 0}
 
     class FakeClient:
@@ -120,7 +150,15 @@ def test_ingest_waits_once_after_queueing_when_requested(
             self.client = client
             self.repo_root = repo_root
 
-        def run(self, project_ids=None, resume=True, extractor=None):
+        def run(
+            self,
+            project_ids=None,
+            resume=True,
+            extractor=None,
+            allow_checkpoint_resume=True,
+            restart_from=None,
+            from_scratch=False,
+        ):
             return {"corpus": 1, "registry": 0, "graph": 0, "knowledge_graph": 0, "wiki": 0}
 
     class FakeClient:
@@ -160,9 +198,24 @@ def test_ingest_can_limit_to_specific_project_ids(
             self.client = client
             self.repo_root = repo_root
 
-        def run(self, project_ids=None, resume=True, extractor=None):
+        def run(
+            self,
+            project_ids=None,
+            resume=True,
+            extractor=None,
+            allow_checkpoint_resume=True,
+            restart_from=None,
+            from_scratch=False,
+        ):
             run_calls.append(
-                {"project_ids": project_ids, "resume": resume, "extractor": extractor}
+                {
+                    "project_ids": project_ids,
+                    "resume": resume,
+                    "extractor": extractor,
+                    "allow_checkpoint_resume": allow_checkpoint_resume,
+                    "restart_from": restart_from,
+                    "from_scratch": from_scratch,
+                }
             )
             return {"corpus": 1, "registry": 0, "graph": 0, "knowledge_graph": 0, "wiki": 0}
 
@@ -180,6 +233,71 @@ def test_ingest_can_limit_to_specific_project_ids(
 
     assert viking_ingest.main(["--project", "alpha_proj"]) == 0
 
-    assert run_calls == [{"project_ids": ["alpha_proj"], "resume": True, "extractor": None}]
+    assert run_calls == [{
+        "project_ids": ["alpha_proj"],
+        "resume": True,
+        "extractor": None,
+        "allow_checkpoint_resume": True,
+        "restart_from": None,
+        "from_scratch": False,
+    }]
     output = capsys.readouterr().out
     assert "Done!" in output
+
+
+def test_ingest_accepts_checkpoint_control_flags(tmp_path: Path, monkeypatch, capsys) -> None:
+    from scripts import viking_ingest
+
+    item = _manifest_item(tmp_path, "alpha")
+    run_calls: list[dict] = []
+
+    class FakePipeline:
+        def __init__(self, client, repo_root):
+            self.client = client
+            self.repo_root = repo_root
+
+        def run(
+            self,
+            project_ids=None,
+            resume=True,
+            extractor=None,
+            allow_checkpoint_resume=True,
+            restart_from=None,
+            from_scratch=False,
+        ):
+            run_calls.append(
+                {
+                    "project_ids": project_ids,
+                    "resume": resume,
+                    "extractor": extractor,
+                    "allow_checkpoint_resume": allow_checkpoint_resume,
+                    "restart_from": restart_from,
+                    "from_scratch": from_scratch,
+                }
+            )
+            return {"corpus": 1, "registry": 0, "graph": 0, "knowledge_graph": 0, "wiki": 0}
+
+    monkeypatch.setattr(
+        viking_ingest,
+        "build_resource_manifest",
+        lambda repo_root, project_ids=None: [item],
+    )
+    monkeypatch.setattr(viking_ingest, "OpenVikingObservatoryClient", lambda settings: SimpleNamespace())
+    monkeypatch.setattr(viking_ingest, "ObservatoryContextSettings", lambda: SimpleNamespace(cborg_api_key=None))
+    import observatory_context.ingest.pipeline as pipeline_module
+
+    monkeypatch.setattr(pipeline_module, "IngestPipeline", FakePipeline)
+
+    assert viking_ingest.main(
+        ["--project", "alpha", "--restart-from", "graph", "--from-scratch", "--no-checkpoint-resume"]
+    ) == 0
+
+    assert run_calls == [{
+        "project_ids": ["alpha"],
+        "resume": True,
+        "extractor": None,
+        "allow_checkpoint_resume": False,
+        "restart_from": "graph",
+        "from_scratch": True,
+    }]
+    assert "Done!" in capsys.readouterr().out

@@ -83,7 +83,7 @@ uv run scripts/viking_ingest.py --dry-run --limit 5
 Full ingest (recommended for first run):
 
 ```bash
-uv run scripts/viking_ingest.py --no-resume
+uv run scripts/viking_ingest.py --no-resume --from-scratch --wait --wait-timeout 7200
 ```
 
 This runs a synthesis-backed pipeline:
@@ -99,7 +99,9 @@ Supports resume mode (skips already-ingested URIs by default).
 For each project with a REPORT.md, runs CBORG extraction (default model:
 `gpt-5.4-mini`). Requires `CBORG_API_KEY`. Extracts entities, relations,
 hypotheses, and timeline events into structured YAML registry entries.
-Uploads to `viking://resources/observatory/registry/`.
+Persists per-project registry snapshots under `data/ingest/registry/`
+and uploads the aggregated registry view to
+`viking://resources/observatory/registry/`.
 
 ### Phase 3 — Graph Build
 
@@ -143,17 +145,38 @@ artifacts and is queryable immediately after export.
 Use `--wait` to block until processing completes, or omit it — data is
 queryable immediately, summaries populate in the background.
 
+### Durable local state and resume
+
+The ingest pipeline now keeps durable local state under `data/ingest/`:
+
+- `registry/projects/<project_id>/...` stores the last good extracted
+  registry snapshot for each project
+- `runs/<run_id>/checkpoint.json` stores phase completion state for each run
+
+If a run fails after completing earlier phases, rerunning the same command
+automatically resumes from the next incomplete phase for that project scope.
+
+This also makes project-scoped updates safe: `--project <id>` extracts just
+that project, then rebuilds the global graph, `knowledge-graph/`, and wiki
+from all persisted registry snapshots.
+
 ### Common ingest commands
 
 ```bash
-# Full ingest from scratch
-uv run scripts/viking_ingest.py --no-resume
+# Full local rebuild from scratch
+uv run scripts/viking_ingest.py --no-resume --from-scratch --wait --wait-timeout 7200
 
 # Incremental update (only new/changed resources)
-uv run scripts/viking_ingest.py
+uv run scripts/viking_ingest.py --wait --wait-timeout 7200
 
-# Single project
-uv run scripts/viking_ingest.py --project rbtnseq_pooled_fitness
+# Single project update with global rebuild from persisted registry state
+uv run scripts/viking_ingest.py --project rbtnseq_pooled_fitness --wait --wait-timeout 7200
+
+# Resume the latest incomplete matching run
+uv run scripts/viking_ingest.py --wait --wait-timeout 7200
+
+# Force rerun from graph rebuild onward
+uv run scripts/viking_ingest.py --restart-from graph --wait --wait-timeout 7200
 
 # Verify all resources exist
 uv run scripts/viking_ingest.py --check

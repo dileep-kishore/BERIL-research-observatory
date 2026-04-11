@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
+from uuid import uuid4
 
 import yaml
 from rich.console import Console
@@ -47,6 +50,7 @@ from observatory_context.wiki.index import WikiEntry, build_index_markdown
 
 logger = logging.getLogger(__name__)
 console = Console()
+_PHASE_SEQUENCE = ("corpus", "registry", "graph", "knowledge_graph", "wiki", "log")
 
 
 def _make_progress() -> Progress:
@@ -84,10 +88,213 @@ class IngestPipeline:
         self.repo_root = repo_root
         self.staging_root = staging_root or Path(mkdtemp(prefix="observatory-ingest-"))
         self.uploader = BatchUploader(client)
+        self.state_root = self.repo_root / "data" / "ingest"
+        self.registry_state_root = self.state_root / "registry" / "projects"
+        self.runs_root = self.state_root / "runs"
+        self._ensure_state_dirs()
 
     # ------------------------------------------------------------------
     # Phase helpers
     # ------------------------------------------------------------------
+
+    def _ensure_state_dirs(self) -> None:
+        self.registry_state_root.mkdir(parents=True, exist_ok=True)
+        self.runs_root.mkdir(parents=True, exist_ok=True)
+
+    def clear_local_state(self) -> None:
+        """Remove local durable ingest state and graph artifacts."""
+        shutil.rmtree(self.state_root, ignore_errors=True)
+        shutil.rmtree(self.repo_root / "data" / "graph", ignore_errors=True)
+        self._ensure_state_dirs()
+
+    def _scope_key(self, project_ids: list[str] | None) -> str:
+        return "__all__" if not project_ids else ",".join(sorted(project_ids))
+
+    def _new_run_id(self) -> str:
+        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return f"{timestamp}-{uuid4().hex[:8]}"
+
+    def _checkpoint_path(self, run_id: str) -> Path:
+        return self.runs_root / run_id / "checkpoint.json"
+
+    def _create_checkpoint(
+        self,
+        run_id: str,
+        project_ids: list[str] | None,
+        resume_phase1: bool,
+    ) -> dict[str, Any]:
+        now = datetime.now(tz=timezone.utc).isoformat()
+        checkpoint = {
+            "run_id": run_id,
+            "scope_key": self._scope_key(project_ids),
+            "project_ids": sorted(project_ids) if project_ids else None,
+            "resume_phase1": resume_phase1,
+            "status": "running",
+            "created_at": now,
+            "updated_at": now,
+            "phases": {
+                phase: {"status": "pending", "count": 0}
+                for phase in _PHASE_SEQUENCE
+            },
+        }
+        self._save_checkpoint(checkpoint)
+        return checkpoint
+
+    def _save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        path = self._checkpoint_path(checkpoint["run_id"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint["updated_at"] = datetime.now(tz=timezone.utc).isoformat()
+        path.write_text(json.dumps(checkpoint, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _load_checkpoint(self, run_id: str) -> dict[str, Any]:
+        return json.loads(self._checkpoint_path(run_id).read_text(encoding="utf-8"))
+
+    def _find_latest_incomplete_checkpoint(
+        self,
+        project_ids: list[str] | None,
+    ) -> dict[str, Any] | None:
+        scope_key = self._scope_key(project_ids)
+        candidates = sorted(self.runs_root.glob("*/checkpoint.json"), reverse=True)
+        for candidate in candidates:
+            checkpoint = json.loads(candidate.read_text(encoding="utf-8"))
+            if checkpoint.get("scope_key") != scope_key:
+                continue
+            if checkpoint.get("status") in {"running", "failed"}:
+                return checkpoint
+        return None
+
+    def _phase_is_complete(self, checkpoint: dict[str, Any], phase: str) -> bool:
+        return checkpoint["phases"][phase]["status"] == "completed"
+
+    def _mark_phase_completed(
+        self,
+        checkpoint: dict[str, Any],
+        phase: str,
+        count: int,
+    ) -> dict[str, Any]:
+        checkpoint["phases"][phase] = {
+            "status": "completed",
+            "count": count,
+            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        self._save_checkpoint(checkpoint)
+        return checkpoint
+
+    def _mark_run_failed(
+        self,
+        checkpoint: dict[str, Any],
+        phase: str,
+        exc: Exception,
+    ) -> None:
+        checkpoint["status"] = "failed"
+        checkpoint["phases"][phase] = {
+            "status": "failed",
+            "count": checkpoint["phases"][phase].get("count", 0),
+            "error": str(exc),
+            "failed_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        self._save_checkpoint(checkpoint)
+
+    def _reset_from_phase(self, checkpoint: dict[str, Any], phase: str) -> dict[str, Any]:
+        start = _PHASE_SEQUENCE.index(phase)
+        for phase_name in _PHASE_SEQUENCE[start:]:
+            checkpoint["phases"][phase_name] = {"status": "pending", "count": 0}
+        checkpoint["status"] = "running"
+        self._save_checkpoint(checkpoint)
+        return checkpoint
+
+    def _prepare_run(
+        self,
+        project_ids: list[str] | None,
+        resume_phase1: bool,
+        allow_checkpoint_resume: bool,
+        restart_from: str | None,
+        from_scratch: bool,
+    ) -> dict[str, Any]:
+        if from_scratch:
+            self.clear_local_state()
+        if restart_from is not None and not allow_checkpoint_resume:
+            raise ValueError("--restart-from requires checkpoint resume to be enabled")
+        checkpoint = None
+        if allow_checkpoint_resume and not from_scratch:
+            checkpoint = self._find_latest_incomplete_checkpoint(project_ids)
+        if checkpoint is None:
+            checkpoint = self._create_checkpoint(
+                run_id=self._new_run_id(),
+                project_ids=project_ids,
+                resume_phase1=resume_phase1,
+            )
+        elif restart_from is not None:
+            checkpoint = self._reset_from_phase(checkpoint, restart_from)
+        return checkpoint
+
+    def _persist_project_entries(
+        self,
+        project_id: str,
+        entries: list[Finding | Hypothesis],
+    ) -> None:
+        project_root = self.registry_state_root / project_id
+        shutil.rmtree(project_root, ignore_errors=True)
+        (project_root / "findings").mkdir(parents=True, exist_ok=True)
+        (project_root / "hypotheses").mkdir(parents=True, exist_ok=True)
+
+        for entry in entries:
+            if isinstance(entry, Finding):
+                rel_path = project_root / "findings" / f"{entry.finding_id}.yaml"
+            elif isinstance(entry, Hypothesis):
+                rel_path = project_root / "hypotheses" / f"{entry.hypothesis_id}.yaml"
+            else:
+                continue
+            rel_path.write_text(
+                yaml.dump(entry.model_dump(exclude_none=True), default_flow_style=False, sort_keys=True),
+                encoding="utf-8",
+            )
+
+    def _load_persisted_entries(self) -> tuple[list[Finding], list[Hypothesis]]:
+        findings: list[Finding] = []
+        hypotheses: list[Hypothesis] = []
+        if not self.registry_state_root.exists():
+            return findings, hypotheses
+        for project_dir in sorted(self.registry_state_root.iterdir()):
+            findings_dir = project_dir / "findings"
+            hypotheses_dir = project_dir / "hypotheses"
+            if findings_dir.exists():
+                for path in sorted(findings_dir.glob("*.yaml")):
+                    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                    if data:
+                        findings.append(Finding.model_validate(data))
+            if hypotheses_dir.exists():
+                for path in sorted(hypotheses_dir.glob("*.yaml")):
+                    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                    if data:
+                        hypotheses.append(Hypothesis.model_validate(data))
+        return findings, hypotheses
+
+    def _stage_registry_snapshot(self, registry_staging: Path) -> int:
+        """Materialize the durable registry store into a flat staging tree."""
+        registry_staging.mkdir(parents=True, exist_ok=True)
+        findings, hypotheses = self._load_persisted_entries()
+        for finding in findings:
+            self.uploader.stage(
+                registry_staging,
+                f"findings/{finding.finding_id}.yaml",
+                yaml.dump(
+                    finding.model_dump(exclude_none=True),
+                    default_flow_style=False,
+                    sort_keys=True,
+                ),
+            )
+        for hypothesis in hypotheses:
+            self.uploader.stage(
+                registry_staging,
+                f"hypotheses/{hypothesis.hypothesis_id}.yaml",
+                yaml.dump(
+                    hypothesis.model_dump(exclude_none=True),
+                    default_flow_style=False,
+                    sort_keys=True,
+                ),
+            )
+        return len(findings) + len(hypotheses)
 
     def build_corpus_manifest(
         self, project_ids: list[str] | None = None
@@ -124,6 +331,7 @@ class IngestPipeline:
             Number of items staged (and queued for upload).
         """
         corpus_staging = self.staging_root / "corpus"
+        shutil.rmtree(corpus_staging, ignore_errors=True)
         corpus_staging.mkdir(parents=True, exist_ok=True)
 
         staged: list[ResourceManifestItem] = []
@@ -186,6 +394,7 @@ class IngestPipeline:
 
         project_ids = sorted({pid for item in manifest for pid in item.project_ids})
         registry_staging = self.staging_root / "registry"
+        shutil.rmtree(registry_staging, ignore_errors=True)
         registry_staging.mkdir(parents=True, exist_ok=True)
 
         all_entries: list[Finding | Hypothesis] = []
@@ -196,6 +405,7 @@ class IngestPipeline:
                 progress.update(task, description=f"Phase 2: {pid}")
                 report_path = self.repo_root / "projects" / pid / "REPORT.md"
                 if not report_path.exists():
+                    self._persist_project_entries(pid, [])
                     progress.advance(task)
                     continue
 
@@ -209,6 +419,7 @@ class IngestPipeline:
                     extraction = extractor.extract_knowledge(report_text, provenance)
                 except (ValueError, Exception) as exc:
                     logger.warning("Extraction failed for %s: %s", pid, exc)
+                    self._persist_project_entries(pid, [])
                     progress.advance(task)
                     continue
 
@@ -216,24 +427,12 @@ class IngestPipeline:
                 time.sleep(3)
 
                 entries = extraction_to_registry_entries(extraction, pid)
+                self._persist_project_entries(pid, entries)
                 all_entries.extend(entries)
-
-                for entry in entries:
-                    if isinstance(entry, Finding):
-                        rel_path = f"findings/{entry.finding_id}.yaml"
-                    elif isinstance(entry, Hypothesis):
-                        rel_path = f"hypotheses/{entry.hypothesis_id}.yaml"
-                    else:
-                        continue
-                    content = yaml.dump(
-                        entry.model_dump(exclude_none=True),
-                        default_flow_style=False,
-                        sort_keys=True,
-                    )
-                    self.uploader.stage(registry_staging, rel_path, content)
                 progress.advance(task)
 
-        if all_entries:
+        staged_count = self._stage_registry_snapshot(registry_staging)
+        if staged_count:
             target_uri = build_registry_uri()
             self.uploader.upload(
                 registry_staging,
@@ -269,7 +468,7 @@ class IngestPipeline:
         """
         # Collect entries from staged registry files if not provided
         if findings is None or hypotheses is None:
-            findings, hypotheses = self._load_staged_entries()
+            findings, hypotheses = self._load_persisted_entries()
 
         if not findings and not hypotheses:
             console.print("  [dim]Phase 3: skipped (no registry entries)[/]")
@@ -277,13 +476,8 @@ class IngestPipeline:
 
         graph_dir = self.repo_root / "data" / "graph"
         graph_dir.mkdir(parents=True, exist_ok=True)
-
-        # Load existing graph for incremental builds
         graph_path = graph_dir / "graph.json"
-        if graph_path.exists():
-            builder = GraphBuilder.load(graph_path)
-        else:
-            builder = GraphBuilder()
+        builder = GraphBuilder()
 
         # Initialize entity resolver
         aliases_path = graph_dir / "aliases.json"
@@ -311,7 +505,10 @@ class IngestPipeline:
 
             # Add project nodes
             progress.update(task, description="Phase 3: Building graph")
-            project_ids = sorted({pid for item in manifest for pid in item.project_ids})
+            project_ids = sorted(
+                {finding.project_id for finding in findings}
+                | {project_id for hypothesis in hypotheses for project_id in hypothesis.project_ids}
+            )
             for pid in project_ids:
                 readme_path = self.repo_root / "projects" / pid / "README.md"
                 title = pid
@@ -446,11 +643,14 @@ class IngestPipeline:
     ) -> tuple[KnowledgeSynthesisBundle, Any | None]:
         """Build the shared synthesis bundle from staged registry and graph artifacts."""
         if findings is None or hypotheses is None:
-            findings, hypotheses = self._load_staged_entries()
+            findings, hypotheses = self._load_persisted_entries()
         if not findings and not hypotheses:
             return KnowledgeSynthesisBundle(), None
         graph, communities = self._load_graph_artifacts()
-        project_ids = sorted({pid for item in manifest for pid in item.project_ids})
+        project_ids = sorted(
+            {finding.project_id for finding in findings}
+            | {project_id for hypothesis in hypotheses for project_id in hypothesis.project_ids}
+        )
         synthesizer = KnowledgeSynthesizer()
         return synthesizer.synthesize(
             findings=findings,
@@ -470,6 +670,7 @@ class IngestPipeline:
             console.print("  [dim]Phase 4: skipped (empty synthesis bundle)[/]")
             return 0
         export_staging = self.staging_root / "knowledge-layer"
+        shutil.rmtree(export_staging, ignore_errors=True)
         export_staging.mkdir(parents=True, exist_ok=True)
         exporter = KnowledgeGraphExporter(bundle=bundle, graph=graph)
         file_count = exporter.export_all(export_staging)
@@ -512,13 +713,14 @@ class IngestPipeline:
             Number of wiki pages compiled.
         """
         if findings is None or hypotheses is None:
-            findings, hypotheses = self._load_staged_entries()
+            findings, hypotheses = self._load_persisted_entries()
 
         if not bundle.entities and not bundle.hypotheses and not bundle.topics:
             console.print("  [dim]Phase 5: skipped (empty synthesis bundle)[/]")
             return 0
 
         wiki_staging = self.staging_root / "wiki"
+        shutil.rmtree(wiki_staging, ignore_errors=True)
         wiki_staging.mkdir(parents=True, exist_ok=True)
 
         wiki_entries: list[WikiEntry] = []
@@ -654,8 +856,7 @@ class IngestPipeline:
                     logger.warning("Phase 6 lock contention, retrying in %ds (attempt %d/8)...", delay, attempt + 1)
                     time.sleep(delay)
                 else:
-                    logger.warning("Phase 6 log entry failed (non-critical): %s", exc)
-                    break
+                    raise RuntimeError(f"Phase 6 log entry failed: {exc}") from exc
 
     def phase4_update_index_and_log(
         self, project_ids: list[str], phase_results: dict[str, int]
@@ -703,6 +904,9 @@ class IngestPipeline:
         project_ids: list[str] | None = None,
         resume: bool = True,
         extractor: Any | None = None,
+        allow_checkpoint_resume: bool = True,
+        restart_from: str | None = None,
+        from_scratch: bool = False,
     ) -> dict[str, int]:
         """Execute the full synthesis-backed pipeline.
 
@@ -715,6 +919,12 @@ class IngestPipeline:
         extractor
             A ``CBORGExtractor`` for phase 2 knowledge extraction.
             If ``None``, phases 2-5 are skipped gracefully.
+        allow_checkpoint_resume
+            Automatically resume the latest incomplete compatible run.
+        restart_from
+            Force phases from this point onward to rerun.
+        from_scratch
+            Clear local durable ingest and graph state before starting.
 
         Returns
         -------
@@ -725,31 +935,97 @@ class IngestPipeline:
         console.print("\n[bold]Observatory Wiki V2 Ingest[/]")
         console.print(f"Projects: {', '.join(project_ids) if project_ids else 'all'}\n")
 
+        if restart_from is not None and restart_from not in _PHASE_SEQUENCE:
+            raise ValueError(f"restart_from must be one of {_PHASE_SEQUENCE!r}")
+
+        checkpoint = self._prepare_run(
+            project_ids=project_ids,
+            resume_phase1=resume,
+            allow_checkpoint_resume=allow_checkpoint_resume,
+            restart_from=restart_from,
+            from_scratch=from_scratch,
+        )
+        if checkpoint["status"] in {"running", "failed"} and any(
+            phase_data["status"] == "completed" for phase_data in checkpoint["phases"].values()
+        ):
+            next_pending = next(
+                (
+                    phase
+                    for phase in _PHASE_SEQUENCE
+                    if checkpoint["phases"][phase]["status"] != "completed"
+                ),
+                "done",
+            )
+            console.print(f"[dim]Resuming run {checkpoint['run_id']} from {next_pending}[/]")
+
         manifest = self.build_corpus_manifest(project_ids=project_ids)
-        corpus_count = self.phase1_upload_corpus(manifest, resume=resume)
-
-        # Phase 2: extract knowledge and create registry entries
-        registry_count = self.phase2_extract_and_register(manifest, extractor=extractor)
-
-        # Phase 3: resolve entities and build knowledge graph
-        graph_count = self.phase3_build_graph(manifest)
-
-        bundle, graph = self.build_synthesis_bundle(manifest)
-
-        knowledge_graph_count = self.phase4_export_knowledge_graph(bundle, graph=graph)
-
-        wiki_count = self.phase5_compile_wiki(manifest, bundle)
-
         phase_results = {
-            "corpus": corpus_count,
-            "registry": registry_count,
-            "graph": graph_count,
-            "knowledge_graph": knowledge_graph_count,
-            "wiki": wiki_count,
+            phase: int(checkpoint["phases"][phase].get("count", 0))
+            for phase in ("corpus", "registry", "graph", "knowledge_graph", "wiki")
         }
 
-        effective_project_ids = project_ids or [item.project_ids[0] for item in manifest if item.project_ids]
-        unique_project_ids = list(dict.fromkeys(effective_project_ids))
-        self.phase5_update_index_and_log(unique_project_ids, phase_results)
+        bundle: KnowledgeSynthesisBundle | None = None
+        graph: Any | None = None
+        current_phase = "corpus"
+        try:
+            if not self._phase_is_complete(checkpoint, "corpus"):
+                phase_results["corpus"] = self.phase1_upload_corpus(manifest, resume=resume)
+                checkpoint = self._mark_phase_completed(checkpoint, "corpus", phase_results["corpus"])
+            else:
+                phase_results["corpus"] = int(checkpoint["phases"]["corpus"].get("count", 0))
 
-        return phase_results
+            current_phase = "registry"
+            if not self._phase_is_complete(checkpoint, "registry"):
+                phase_results["registry"] = self.phase2_extract_and_register(manifest, extractor=extractor)
+                checkpoint = self._mark_phase_completed(checkpoint, "registry", phase_results["registry"])
+            else:
+                phase_results["registry"] = int(checkpoint["phases"]["registry"].get("count", 0))
+
+            current_phase = "graph"
+            if not self._phase_is_complete(checkpoint, "graph"):
+                phase_results["graph"] = self.phase3_build_graph(manifest)
+                checkpoint = self._mark_phase_completed(checkpoint, "graph", phase_results["graph"])
+            else:
+                phase_results["graph"] = int(checkpoint["phases"]["graph"].get("count", 0))
+
+            if (
+                not self._phase_is_complete(checkpoint, "knowledge_graph")
+                or not self._phase_is_complete(checkpoint, "wiki")
+            ):
+                bundle, graph = self.build_synthesis_bundle(manifest)
+
+            current_phase = "knowledge_graph"
+            if not self._phase_is_complete(checkpoint, "knowledge_graph"):
+                assert bundle is not None
+                phase_results["knowledge_graph"] = self.phase4_export_knowledge_graph(bundle, graph=graph)
+                checkpoint = self._mark_phase_completed(
+                    checkpoint,
+                    "knowledge_graph",
+                    phase_results["knowledge_graph"],
+                )
+            else:
+                phase_results["knowledge_graph"] = int(
+                    checkpoint["phases"]["knowledge_graph"].get("count", 0)
+                )
+
+            current_phase = "wiki"
+            if not self._phase_is_complete(checkpoint, "wiki"):
+                assert bundle is not None
+                phase_results["wiki"] = self.phase5_compile_wiki(manifest, bundle)
+                checkpoint = self._mark_phase_completed(checkpoint, "wiki", phase_results["wiki"])
+            else:
+                phase_results["wiki"] = int(checkpoint["phases"]["wiki"].get("count", 0))
+
+            current_phase = "log"
+            effective_project_ids = project_ids or [item.project_ids[0] for item in manifest if item.project_ids]
+            unique_project_ids = list(dict.fromkeys(effective_project_ids))
+            if not self._phase_is_complete(checkpoint, "log"):
+                self.phase5_update_index_and_log(unique_project_ids, phase_results)
+                checkpoint = self._mark_phase_completed(checkpoint, "log", 1)
+
+            checkpoint["status"] = "completed"
+            self._save_checkpoint(checkpoint)
+            return phase_results
+        except Exception as exc:
+            self._mark_run_failed(checkpoint, current_phase, exc)
+            raise

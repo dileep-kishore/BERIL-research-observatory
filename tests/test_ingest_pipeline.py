@@ -9,6 +9,8 @@ import pytest
 import yaml
 
 from observatory_context.extraction import Entity, EntityExtraction, HypothesisUpdate, Relation
+from observatory_context.graph.builder import GraphBuilder
+from observatory_context.graph.knowledge_synthesis import KnowledgeSynthesisBundle
 from observatory_context.ingest.pipeline import IngestPipeline
 from observatory_context.registry.schema import Finding, Hypothesis
 
@@ -139,6 +141,16 @@ def test_phase4_update_index_and_log_calls_client(pipeline, mock_client):
     assert call_kwargs is not None
 
 
+def test_phase5_update_index_and_log_raises_on_client_error(pipeline, mock_client):
+    mock_client.add_text_resource.side_effect = RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="Phase 6 log entry failed"):
+        pipeline.phase5_update_index_and_log(
+            project_ids=["test-proj"],
+            phase_results={"corpus": 3, "registry": 5, "wiki": 1},
+        )
+
+
 def test_run_returns_dict_with_phase_keys(pipeline, mock_client, tmp_path):
     project_dir = tmp_path / "projects" / "test-proj"
     project_dir.mkdir(parents=True)
@@ -210,6 +222,55 @@ def test_phase2_skips_projects_without_report(pipeline, mock_client, tmp_path):
 
     assert count == 0
     extractor.extract_knowledge.assert_not_called()
+
+
+def test_phase2_clears_persisted_state_when_project_report_disappears(
+    pipeline, mock_client, tmp_path
+):
+    """A targeted rerun should not retain stale registry state for a missing report."""
+    manifest = _make_manifest_with_report(tmp_path)
+    extractor = _make_mock_extractor()
+
+    pipeline.phase2_extract_and_register(manifest, extractor=extractor)
+    findings, hypotheses = pipeline._load_persisted_entries()
+    assert len(findings) == 1
+    assert len(hypotheses) == 1
+
+    (tmp_path / "projects" / "test-proj" / "REPORT.md").unlink()
+
+    count = pipeline.phase2_extract_and_register(manifest, extractor=extractor)
+
+    assert count == 0
+    findings, hypotheses = pipeline._load_persisted_entries()
+    assert findings == []
+    assert hypotheses == []
+
+
+def test_phase3_rebuilds_from_persisted_registry_state_across_projects(
+    pipeline, mock_client, tmp_path
+):
+    """A project-scoped rerun still rebuilds the global graph from durable registry state."""
+    manifest_a = _make_manifest_with_report(tmp_path, project_id="proj-a")
+    manifest_b = _make_manifest_with_report(tmp_path, project_id="proj-b")
+
+    extraction_a = _make_extraction_for_project("proj-a", organism="Alpha bacterium", gene="geneA")
+    extraction_b = _make_extraction_for_project("proj-b", organism="Beta bacterium", gene="geneB")
+
+    pipeline.phase2_extract_and_register(manifest_a, extractor=_make_mock_extractor(extraction_a))
+    pipeline.phase2_extract_and_register(manifest_b, extractor=_make_mock_extractor(extraction_b))
+
+    count = pipeline.phase3_build_graph(manifest_b)
+
+    assert count > 0
+
+    graph_path = tmp_path / "data" / "graph" / "graph.json"
+    graph = GraphBuilder.load(graph_path).G
+    project_ids = {
+        node_data.get("project_id")
+        for _node_id, node_data in graph.nodes(data=True)
+        if node_data.get("kind") == "project"
+    }
+    assert {"proj-a", "proj-b"}.issubset(project_ids)
 
 
 # ------------------------------------------------------------------
@@ -300,28 +361,103 @@ def test_run_with_extractor_wires_all_phases(pipeline, mock_client, tmp_path):
     assert mock_client.batch_add.call_count >= 3
 
 
+def test_run_resumes_from_latest_incomplete_checkpoint(pipeline, mock_client, tmp_path):
+    """A failed run resumes from the next incomplete phase instead of replaying earlier phases."""
+    _make_manifest_with_report(tmp_path)
+    extractor = _make_mock_extractor()
+
+    pipeline.phase1_upload_corpus = MagicMock(return_value=3)  # type: ignore[method-assign]
+    pipeline.phase2_extract_and_register = MagicMock(return_value=2)  # type: ignore[method-assign]
+    pipeline.phase3_build_graph = MagicMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="boom"):
+        pipeline.run(project_ids=["test-proj"], resume=False, extractor=extractor)
+
+    resumed = IngestPipeline(
+        client=mock_client,
+        repo_root=tmp_path,
+        staging_root=tmp_path / "staging-resume",
+    )
+    resumed.phase1_upload_corpus = MagicMock(return_value=99)  # type: ignore[method-assign]
+    resumed.phase2_extract_and_register = MagicMock(return_value=99)  # type: ignore[method-assign]
+    resumed.phase3_build_graph = MagicMock(return_value=7)  # type: ignore[method-assign]
+    resumed.build_synthesis_bundle = MagicMock(
+        return_value=(KnowledgeSynthesisBundle(), None)
+    )  # type: ignore[method-assign]
+    resumed.phase4_export_knowledge_graph = MagicMock(return_value=0)  # type: ignore[method-assign]
+    resumed.phase5_compile_wiki = MagicMock(return_value=0)  # type: ignore[method-assign]
+    resumed.phase5_update_index_and_log = MagicMock()  # type: ignore[method-assign]
+
+    results = resumed.run(project_ids=["test-proj"], resume=False, extractor=extractor)
+
+    resumed.phase1_upload_corpus.assert_not_called()
+    resumed.phase2_extract_and_register.assert_not_called()
+    resumed.phase3_build_graph.assert_called_once()
+    assert results["corpus"] == 3
+    assert results["registry"] == 2
+    assert results["graph"] == 7
+
+
+def test_run_rejects_restart_from_without_checkpoint_resume(pipeline, tmp_path):
+    _make_manifest_with_report(tmp_path)
+
+    with pytest.raises(ValueError, match="checkpoint resume"):
+        pipeline.run(
+            project_ids=["test-proj"],
+            resume=False,
+            allow_checkpoint_resume=False,
+            restart_from="graph",
+        )
+
+
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
 
 
-def _make_manifest_with_report(tmp_path: Path):
+def _make_manifest_with_report(tmp_path: Path, project_id: str = "test-proj"):
     """Create a project with REPORT.md and return a minimal manifest."""
     from observatory_context.ingest.manifest import ResourceManifestItem
 
-    project_dir = tmp_path / "projects" / "test-proj"
+    project_dir = tmp_path / "projects" / project_id
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "README.md").write_text("# Test Project\nresearch_question: Does X affect Y?\n")
     (project_dir / "REPORT.md").write_text("# Report\n\nWe found that X affects Y.\n")
     (project_dir / "provenance.yaml").write_text(
-        yaml.dump({"project": "test-proj", "date": "2026-01-01"})
+        yaml.dump({"project": project_id, "date": "2026-01-01"})
     )
     return [
         ResourceManifestItem(
-            uri="viking://resources/observatory/projects/test-proj/authored/REPORT.md",
+            uri=f"viking://resources/observatory/projects/{project_id}/authored/REPORT.md",
             kind="project_document",
             source_path=str(project_dir / "REPORT.md"),
-            project_ids=["test-proj"],
-            metadata={"id": "test-proj", "kind": "project_document"},
+            project_ids=[project_id],
+            metadata={"id": project_id, "kind": "project_document"},
         ),
     ]
+
+
+def _make_extraction_for_project(project_id: str, organism: str, gene: str) -> EntityExtraction:
+    return EntityExtraction(
+        entities=[
+            Entity(type="organism", id=f"{project_id}-org", name=organism),
+            Entity(type="gene", id=f"{project_id}-gene", name=gene),
+        ],
+        relations=[
+            Relation(
+                subject=f"{project_id}-org",
+                predicate="supports",
+                object=f"{project_id}-gene",
+                evidence=f"Observed in {project_id}",
+                confidence="high",
+            ),
+        ],
+        hypotheses=[
+            HypothesisUpdate(
+                id=f"H-{project_id}",
+                status="supported",
+                claim=f"{organism} links to {gene}",
+                evidence_delta="Confirmed",
+            ),
+        ],
+    )
