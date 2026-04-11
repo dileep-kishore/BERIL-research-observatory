@@ -145,6 +145,11 @@ class KnowledgeGraphExporter:
         if self.graph is None:
             return 0
 
+        exported_entities = {
+            (entity.entity_type, entity.slug): build_entity_uri(entity.entity_type, entity.slug)
+            for entity in self.bundle.entities
+        }
+
         relation_map: dict[tuple[str, str], dict[str, Any]] = {}
         for source, target, data in self.graph.edges(data=True):
             if data.get("relation") != "RELATED_TO":
@@ -153,25 +158,31 @@ class KnowledgeGraphExporter:
             target_data = self.graph.nodes.get(target, {})
             if source_data.get("kind") != "entity" or target_data.get("kind") != "entity":
                 continue
+            source_slug = slugify(source_data.get("canonical_name", source))
+            target_slug = slugify(target_data.get("canonical_name", target))
+            source_key = (source_data.get("entity_type", "concept"), source_slug)
+            target_key = (target_data.get("entity_type", "concept"), target_slug)
+            if source_key not in exported_entities or target_key not in exported_entities:
+                continue
             key = (source, target)
             entry = relation_map.setdefault(
                 key,
                 {
-                    "from_uri": build_entity_uri(
-                        source_data.get("entity_type", "concept"),
-                        slugify(source_data.get("canonical_name", source)),
-                    ),
-                    "to_uri": build_entity_uri(
-                        target_data.get("entity_type", "concept"),
-                        slugify(target_data.get("canonical_name", target)),
-                    ),
+                    "from_uri": exported_entities[source_key],
+                    "to_uri": exported_entities[target_key],
                     "weight": 0,
                 },
             )
             entry["weight"] += int(data.get("weight", 1))
 
         created = 0
+        created_dirs: set[str] = set()
         for entry in relation_map.values():
+            if hasattr(client, "make_directory"):
+                for uri in (entry["from_uri"], entry["to_uri"]):
+                    if uri not in created_dirs:
+                        client.make_directory(uri)
+                        created_dirs.add(uri)
             reason = f"co-occurs in {entry['weight']} finding(s)"
             client.link_resources(entry["from_uri"], [entry["to_uri"]], reason=reason)
             client.link_resources(entry["to_uri"], [entry["from_uri"]], reason=reason)

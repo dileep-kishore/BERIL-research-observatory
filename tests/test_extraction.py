@@ -89,3 +89,31 @@ def test_extract_knowledge_normalizes_known_predicates_and_skips_invalid_ones() 
 
     assert len(extraction.relations) == 1
     assert extraction.relations[0].predicate == "required_for"
+
+
+def test_extract_knowledge_normalizes_requires_for_predicate() -> None:
+    extractor = _make_extractor()
+    extractor._chat = lambda **_: """
+{
+  "entities": [
+    {"type": "gene", "id": "gene-a", "name": "Gene A"},
+    {"type": "pathway", "id": "pathway-b", "name": "Pathway B"}
+  ],
+  "relations": [
+    {
+      "subject": "gene-a",
+      "predicate": "requires_for",
+      "object": "pathway-b",
+      "evidence": "Required in assay",
+      "confidence": "high"
+    }
+  ],
+  "hypotheses": [],
+  "timeline_events": []
+}
+"""
+
+    extraction = extractor.extract_knowledge("report", {"project": "x"})
+
+    assert len(extraction.relations) == 1
+    assert extraction.relations[0].predicate == "required_for"

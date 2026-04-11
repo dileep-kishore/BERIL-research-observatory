@@ -39,6 +39,7 @@ _PREDICATE_ALIASES = {
     "require": "required_for",
     "required": "required_for",
     "requires": "required_for",
+    "requires_for": "required_for",
     "required_by": "required_for",
     "related_to": "associated_with",
     "related_with": "associated_with",
