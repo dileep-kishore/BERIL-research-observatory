@@ -47,6 +47,9 @@ _SIMILARITY_THRESHOLDS: dict[str, float] = {
 _STRAIN_PATTERN = re.compile(
     r"^(?P<species>.+?)\s+(?P<strain>[A-Z]{1,4}[\-]?\d[\w\-]*)$"
 )
+_EMBEDDING_BATCH_SIZE = 128
+_EMBEDDING_MODEL = "text-embedding-3-large"
+_EMBEDDING_DIMENSIONS = 3072
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +96,14 @@ class EntityResolver:
         self._aliases = aliases if aliases is not None else load_aliases()
         self._embedding_cache: dict[str, list[float]] = embedding_cache or {}
         self._api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
+        self._embedding_client = (
+            httpx.Client(
+                timeout=30.0,
+                headers={"Authorization": f"Bearer {self._api_key}"},
+            )
+            if self._api_key
+            else None
+        )
 
         # Build reverse lookup: lowercased alias -> canonical name
         self._reverse: dict[str, str] = {}
@@ -162,12 +173,28 @@ class EntityResolver:
         """
         results: dict[str, ResolvedEntity] = {}
         canonical_set: dict[str, ResolvedEntity] = {}
+        rule_results: dict[str, ResolvedEntity | None] = {}
+        pending_labels: list[str] = []
 
         for entity_type, raw_label in entities:
             if raw_label in results:
                 continue
 
-            resolved = self.resolve(entity_type, raw_label)
+            resolved = self._resolve_rules(entity_type, raw_label)
+            rule_results[raw_label] = resolved
+            if resolved is None:
+                pending_labels.append(raw_label)
+
+        if pending_labels and self._api_key:
+            self._prefetch_embeddings([*self._aliases.keys(), *pending_labels])
+
+        for entity_type, raw_label in entities:
+            if raw_label in results:
+                continue
+
+            resolved = rule_results.get(raw_label)
+            if resolved is None:
+                resolved = self.resolve(entity_type, raw_label)
 
             # Merge with existing canonical if we've seen it
             key = resolved.canonical.lower()
@@ -230,6 +257,12 @@ class EntityResolver:
             )
             return best_match
         return None
+
+    def close(self) -> None:
+        """Release the shared embedding client if one was created."""
+        if self._embedding_client is not None:
+            self._embedding_client.close()
+            self._embedding_client = None
 
     def update_aliases(self, canonical: str, new_alias: str) -> None:
         """Register a new alias for a canonical entity.
@@ -389,27 +422,58 @@ class EntityResolver:
         if key in self._embedding_cache:
             return self._embedding_cache[key]
 
-        if not self._api_key:
+        if not self._api_key or self._embedding_client is None:
             return None
 
         try:
-            with httpx.Client(timeout=30.0) as client:
-                resp = client.post(
-                    "https://api.openai.com/v1/embeddings",
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    json={
-                        "model": "text-embedding-3-large",
-                        "input": text,
-                        "dimensions": 3072,
-                    },
-                )
-                resp.raise_for_status()
-                vec = resp.json()["data"][0]["embedding"]
-                self._embedding_cache[key] = vec
-                return vec
+            resp = self._embedding_client.post(
+                "https://api.openai.com/v1/embeddings",
+                json={
+                    "model": _EMBEDDING_MODEL,
+                    "input": text,
+                    "dimensions": _EMBEDDING_DIMENSIONS,
+                },
+            )
+            resp.raise_for_status()
+            vec = resp.json()["data"][0]["embedding"]
+            self._embedding_cache[key] = vec
+            return vec
         except (httpx.HTTPError, KeyError, IndexError) as exc:
             logger.warning("Embedding API call failed for %r: %s", text, exc)
             return None
+
+    def _prefetch_embeddings(self, texts: list[str]) -> None:
+        """Fetch uncached embeddings in batches using one shared client."""
+        if not texts or not self._api_key or self._embedding_client is None:
+            return
+
+        uncached: list[str] = []
+        seen: set[str] = set()
+        for text in texts:
+            key = text.lower().strip()
+            if key in self._embedding_cache or key in seen:
+                continue
+            seen.add(key)
+            uncached.append(text)
+
+        for index in range(0, len(uncached), _EMBEDDING_BATCH_SIZE):
+            batch = uncached[index:index + _EMBEDDING_BATCH_SIZE]
+            try:
+                resp = self._embedding_client.post(
+                    "https://api.openai.com/v1/embeddings",
+                    json={
+                        "model": _EMBEDDING_MODEL,
+                        "input": batch,
+                        "dimensions": _EMBEDDING_DIMENSIONS,
+                    },
+                )
+                resp.raise_for_status()
+                payload = resp.json()
+                for item in payload["data"]:
+                    text = batch[item["index"]]
+                    self._embedding_cache[text.lower().strip()] = item["embedding"]
+            except (httpx.HTTPError, KeyError, IndexError) as exc:
+                logger.warning("Embedding batch API call failed for %d texts: %s", len(batch), exc)
 
 
 # ---------------------------------------------------------------------------

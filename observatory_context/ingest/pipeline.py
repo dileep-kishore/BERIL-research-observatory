@@ -747,82 +747,15 @@ class IngestPipeline:
             for ref in h.related_entities:
                 entity_refs.append((ref.type, ref.label))
 
-        tracker = self._tracker
-        if tracker is not None:
-            tracker.start_phase("Phase 3: Building graph", 3, note="Resolving entity aliases")
-            tracker.set_item("entity-resolution", note=f"Resolving {len(entity_refs)} entity references")
-            resolved = resolver.resolve_batch(entity_refs)
-            tracker.advance(note=f"Resolved {len(resolved)} canonical entities")
-
-            tracker.set_item("graph-build", note="Adding project, entity, finding, and hypothesis nodes")
-            project_ids = sorted(
-                {finding.project_id for finding in findings}
-                | {project_id for hypothesis in hypotheses for project_id in hypothesis.project_ids}
-            )
-            for pid in project_ids:
-                readme_path = self.repo_root / "projects" / pid / "README.md"
-                title = pid
-                if readme_path.exists():
-                    first_line = readme_path.read_text(encoding="utf-8").split("\n")[0]
-                    if first_line.startswith("# "):
-                        title = first_line[2:].strip()
-                builder.add_project(pid, title)
-
-            for raw_label, resolved_entity in resolved.items():
-                builder.add_entity(
-                    canonical_name=resolved_entity.canonical,
-                    entity_type=resolved_entity.entity_type,
-                    aliases=resolved_entity.aliases,
-                )
-
-            for f in findings:
-                entity_map = {}
-                for ref in f.related_entities:
-                    if ref.label in resolved:
-                        r = resolved[ref.label]
-                        from observatory_context.graph.builder import _entity_node_id
-                        entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
-                builder.add_finding(f, entity_map)
-
-            for h in hypotheses:
-                entity_map = {}
-                for ref in h.related_entities:
-                    if ref.label in resolved:
-                        r = resolved[ref.label]
-                        from observatory_context.graph.builder import _entity_node_id
-                        entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
-                builder.add_hypothesis(h, entity_map)
-            tracker.advance(note="Graph nodes and edges built")
-
-            tracker.set_item("communities", note="Running community detection and writing graph artifacts")
-            communities = builder.build_communities()
-            builder.serialize(graph_path)
-
-            from observatory_context.graph.aliases import save_aliases
-            save_aliases(resolver._aliases, aliases_path)
-
-            import json
-            communities_path = graph_dir / "communities.json"
-            communities_path.write_text(
-                json.dumps(communities, indent=2, default=str),
-                encoding="utf-8",
-            )
-
-            report_content = generate_graph_report(builder)
-            report_path = graph_dir / "GRAPH_REPORT.md"
-            save_report(report_content, report_path)
-            tracker.advance(note="Graph artifacts written")
-        else:
-            with _make_progress() as progress:
-                task = progress.add_task(
-                    "Phase 3: Resolving entities", total=3,
-                )
-
+        try:
+            tracker = self._tracker
+            if tracker is not None:
+                tracker.start_phase("Phase 3: Building graph", 3, note="Resolving entity aliases")
+                tracker.set_item("entity-resolution", note=f"Resolving {len(entity_refs)} entity references")
                 resolved = resolver.resolve_batch(entity_refs)
-                progress.advance(task)
+                tracker.advance(note=f"Resolved {len(resolved)} canonical entities")
 
-                # Add project nodes
-                progress.update(task, description="Phase 3: Building graph")
+                tracker.set_item("graph-build", note="Adding project, entity, finding, and hypothesis nodes")
                 project_ids = sorted(
                     {finding.project_id for finding in findings}
                     | {project_id for hypothesis in hypotheses for project_id in hypothesis.project_ids}
@@ -836,7 +769,6 @@ class IngestPipeline:
                             title = first_line[2:].strip()
                     builder.add_project(pid, title)
 
-                # Add resolved entities
                 for raw_label, resolved_entity in resolved.items():
                     builder.add_entity(
                         canonical_name=resolved_entity.canonical,
@@ -844,7 +776,6 @@ class IngestPipeline:
                         aliases=resolved_entity.aliases,
                     )
 
-                # Add findings with resolved entity links
                 for f in findings:
                     entity_map = {}
                     for ref in f.related_entities:
@@ -854,7 +785,6 @@ class IngestPipeline:
                             entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
                     builder.add_finding(f, entity_map)
 
-                # Add hypotheses with resolved entity links
                 for h in hypotheses:
                     entity_map = {}
                     for ref in h.related_entities:
@@ -863,18 +793,15 @@ class IngestPipeline:
                             from observatory_context.graph.builder import _entity_node_id
                             entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
                     builder.add_hypothesis(h, entity_map)
-                progress.advance(task)
+                tracker.advance(note="Graph nodes and edges built")
 
-                # Community detection + report
-                progress.update(task, description="Phase 3: Communities + report")
+                tracker.set_item("communities", note="Running community detection and writing graph artifacts")
                 communities = builder.build_communities()
                 builder.serialize(graph_path)
 
-                # Save updated aliases
                 from observatory_context.graph.aliases import save_aliases
                 save_aliases(resolver._aliases, aliases_path)
 
-                # Save communities
                 import json
                 communities_path = graph_dir / "communities.json"
                 communities_path.write_text(
@@ -882,11 +809,87 @@ class IngestPipeline:
                     encoding="utf-8",
                 )
 
-                # Generate GRAPH_REPORT.md
                 report_content = generate_graph_report(builder)
                 report_path = graph_dir / "GRAPH_REPORT.md"
                 save_report(report_content, report_path)
-                progress.advance(task)
+                tracker.advance(note="Graph artifacts written")
+            else:
+                with _make_progress() as progress:
+                    task = progress.add_task(
+                        "Phase 3: Resolving entities", total=3,
+                    )
+
+                    resolved = resolver.resolve_batch(entity_refs)
+                    progress.advance(task)
+
+                    # Add project nodes
+                    progress.update(task, description="Phase 3: Building graph")
+                    project_ids = sorted(
+                        {finding.project_id for finding in findings}
+                        | {project_id for hypothesis in hypotheses for project_id in hypothesis.project_ids}
+                    )
+                    for pid in project_ids:
+                        readme_path = self.repo_root / "projects" / pid / "README.md"
+                        title = pid
+                        if readme_path.exists():
+                            first_line = readme_path.read_text(encoding="utf-8").split("\n")[0]
+                            if first_line.startswith("# "):
+                                title = first_line[2:].strip()
+                        builder.add_project(pid, title)
+
+                    # Add resolved entities
+                    for raw_label, resolved_entity in resolved.items():
+                        builder.add_entity(
+                            canonical_name=resolved_entity.canonical,
+                            entity_type=resolved_entity.entity_type,
+                            aliases=resolved_entity.aliases,
+                        )
+
+                    # Add findings with resolved entity links
+                    for f in findings:
+                        entity_map = {}
+                        for ref in f.related_entities:
+                            if ref.label in resolved:
+                                r = resolved[ref.label]
+                                from observatory_context.graph.builder import _entity_node_id
+                                entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
+                        builder.add_finding(f, entity_map)
+
+                    # Add hypotheses with resolved entity links
+                    for h in hypotheses:
+                        entity_map = {}
+                        for ref in h.related_entities:
+                            if ref.label in resolved:
+                                r = resolved[ref.label]
+                                from observatory_context.graph.builder import _entity_node_id
+                                entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
+                        builder.add_hypothesis(h, entity_map)
+                    progress.advance(task)
+
+                    # Community detection + report
+                    progress.update(task, description="Phase 3: Communities + report")
+                    communities = builder.build_communities()
+                    builder.serialize(graph_path)
+
+                    # Save updated aliases
+                    from observatory_context.graph.aliases import save_aliases
+                    save_aliases(resolver._aliases, aliases_path)
+
+                    # Save communities
+                    import json
+                    communities_path = graph_dir / "communities.json"
+                    communities_path.write_text(
+                        json.dumps(communities, indent=2, default=str),
+                        encoding="utf-8",
+                    )
+
+                    # Generate GRAPH_REPORT.md
+                    report_content = generate_graph_report(builder)
+                    report_path = graph_dir / "GRAPH_REPORT.md"
+                    save_report(report_content, report_path)
+                    progress.advance(task)
+        finally:
+            resolver.close()
 
         node_count = builder.G.number_of_nodes()
         elapsed = tracker.complete_phase(
