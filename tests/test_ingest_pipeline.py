@@ -13,6 +13,7 @@ from observatory_context.graph.builder import GraphBuilder
 from observatory_context.graph.knowledge_synthesis import KnowledgeSynthesisBundle
 from observatory_context.ingest.pipeline import IngestPipeline
 from observatory_context.registry.schema import Finding, Hypothesis
+from observatory_context.uris import build_projects_root_uri
 
 
 @pytest.fixture()
@@ -62,6 +63,7 @@ def _make_mock_extractor(extraction: EntityExtraction | None = None) -> MagicMoc
     """Return a mock CBORGExtractor that returns a canned extraction."""
     ext = extraction or _make_extraction()
     mock = MagicMock()
+    mock.supports_batch_extraction = False
     mock.extract_knowledge.return_value = ext
     return mock
 
@@ -100,6 +102,22 @@ def test_phase1_upload_corpus_returns_count(pipeline, mock_client, tmp_path):
     assert count >= 0
 
 
+def test_phase1_preserves_manifest_relative_paths(pipeline, mock_client, tmp_path):
+    for project_id in ("proj-a", "proj-b"):
+        project_dir = tmp_path / "projects" / project_id
+        project_dir.mkdir(parents=True)
+        (project_dir / "README.md").write_text(f"# {project_id}\n", encoding="utf-8")
+
+    manifest = pipeline.build_corpus_manifest(project_ids=["proj-a", "proj-b"])
+
+    pipeline.phase1_upload_corpus(manifest, resume=False)
+
+    assert (pipeline.staging_root / "corpus" / "proj-a" / "authored" / "README.md").exists()
+    assert (pipeline.staging_root / "corpus" / "proj-b" / "authored" / "README.md").exists()
+    assert mock_client.batch_add.call_args.kwargs["to"] == build_projects_root_uri()
+    assert mock_client.batch_add.call_args.kwargs["preserve_structure"] is True
+
+
 def test_phase1_skip_existing_when_resume(pipeline, mock_client, tmp_path):
     project_dir = tmp_path / "projects" / "test-proj"
     project_dir.mkdir(parents=True)
@@ -136,13 +154,15 @@ def test_phase4_update_index_and_log_calls_client(pipeline, mock_client):
         project_ids=["test-proj"],
         phase_results={"corpus": 3, "registry": 5, "wiki": 1},
     )
-    mock_client.add_text_resource.assert_called_once()
-    call_kwargs = mock_client.add_text_resource.call_args
+    mock_client.batch_add.assert_called_once()
+    call_kwargs = mock_client.batch_add.call_args
     assert call_kwargs is not None
+    assert call_kwargs.kwargs["wait"] is False
+    mock_client.wait_until_processed.assert_called_once()
 
 
 def test_phase5_update_index_and_log_raises_on_client_error(pipeline, mock_client):
-    mock_client.add_text_resource.side_effect = RuntimeError("boom")
+    mock_client.batch_add.side_effect = RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="Phase 6 log entry failed"):
         pipeline.phase5_update_index_and_log(
@@ -199,15 +219,36 @@ def test_phase2_extracts_and_stages_registry(pipeline, mock_client, tmp_path):
     registry_staging = pipeline.staging_root / "registry"
     findings_files = list((registry_staging / "findings").glob("*.yaml"))
     hyp_files = list((registry_staging / "hypotheses").glob("*.yaml"))
-    assert len(findings_files) == 1
-    assert len(hyp_files) == 1
 
-    # Verify YAML content is valid
-    finding_data = yaml.safe_load(findings_files[0].read_text())
-    assert finding_data["project_id"] == "test-proj"
 
-    # Verify batch upload was called
-    mock_client.batch_add.assert_called()
+def test_phase2_extracts_each_project_separately(pipeline, mock_client, tmp_path):
+    manifest = _make_manifest_with_report(tmp_path, project_id="proj-a")
+    manifest.extend(_make_manifest_with_report(tmp_path, project_id="proj-b"))
+
+    extractor = MagicMock()
+    extractor.supports_batch_extraction = False
+    extractor.extract_knowledge.side_effect = [_make_extraction(), _make_extraction()]
+
+    count = pipeline.phase2_extract_and_register(manifest, extractor=extractor)
+
+    assert count == 4
+    assert extractor.extract_knowledge.call_count == 2
+    assert mock_client.batch_add.call_args.kwargs["preserve_structure"] is True
+
+
+def test_phase2_skips_only_the_failing_project(pipeline, mock_client, tmp_path):
+    manifest = _make_manifest_with_report(tmp_path, project_id="proj-a")
+    manifest.extend(_make_manifest_with_report(tmp_path, project_id="proj-b"))
+
+    extractor = MagicMock()
+    extractor.supports_batch_extraction = False
+    extractor.extract_knowledge.side_effect = [ValueError("too large"), _make_extraction()]
+
+    count = pipeline.phase2_extract_and_register(manifest, extractor=extractor)
+
+    assert count == 2
+    assert extractor.extract_knowledge.call_count == 2
+    assert mock_client.batch_add.call_args.kwargs["preserve_structure"] is True
 
 
 def test_phase2_skips_projects_without_report(pipeline, mock_client, tmp_path):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from observatory_context.staging import write_staged_file
@@ -54,6 +55,7 @@ class BatchUploader:
         reason: str,
         wait: bool = False,
         timeout: float | None = None,
+        preserve_structure: bool | None = None,
     ) -> None:
         """Upload the staging directory to OpenViking.
 
@@ -70,6 +72,21 @@ class BatchUploader:
         timeout
             Maximum seconds to wait when ``wait=True``.
         """
-        self.client.batch_add(path=str(staging_dir), to=target_uri, reason=reason, wait=False)
+        for attempt in range(8):
+            try:
+                self.client.batch_add(
+                    path=str(staging_dir),
+                    to=target_uri,
+                    reason=reason,
+                    wait=False,
+                    timeout=timeout,
+                    preserve_structure=preserve_structure,
+                )
+                break
+            except Exception as exc:
+                if "lock" in str(exc).lower() and attempt < 7:
+                    time.sleep(min(2 ** attempt, 30))
+                    continue
+                raise
         if wait:
             self.client.wait_until_processed(timeout=timeout)

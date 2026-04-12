@@ -108,4 +108,6 @@ def test_pipeline_builds_synthesis_and_exports_to_observatory_root(tmp_path: Pat
 
     assert count > 0
     assert client.batch_add.call_args.kwargs["to"] == "viking://resources/observatory"
+    assert client.batch_add.call_args.kwargs["wait"] is False
+    client.wait_until_processed.assert_called_once()
     assert client.link_resources.call_count == 2

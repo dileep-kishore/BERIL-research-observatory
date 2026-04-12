@@ -26,6 +26,10 @@ def build_observatory_root_uri() -> str:
     return _ROOT
 
 
+def build_projects_root_uri() -> str:
+    return f"{_ROOT}/projects"
+
+
 def build_project_workspace_uri(project_id: str) -> str:
     path = PurePosixPath("projects", _normalize_segment(project_id))
     return f"{_ROOT}/{path.as_posix()}"
@@ -165,7 +169,7 @@ def build_wiki_index_uri() -> str:
 
 
 def build_wiki_log_uri() -> str:
-    return f"{_ROOT}/wiki/log.md"
+    return f"{_ROOT}/logs/ingest"
 
 
 def build_wiki_topic_uri(slug: str) -> str:

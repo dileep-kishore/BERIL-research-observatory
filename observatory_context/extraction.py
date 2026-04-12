@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
+_DEFAULT_EXTRACTION_MAX_OUTPUT_TOKENS = 16_384
+_INPUT_HEADROOM_RATIO = 0.9
+_MODEL_TOKEN_LIMITS: tuple[tuple[str, int, int], ...] = (
+    ("amazon/claude-haiku-4-5", 200_000, 64_000),
+    ("claude-haiku-4-5", 200_000, 8_192),
+    ("claude-haiku", 200_000, 8_192),
+    ("gpt-5.4-mini", 272_000, 128_000),
+    ("gpt-5-mini", 272_000, 128_000),
+)
 
 _ENTITY_TYPES = Literal[
     "organism", "gene", "pathway", "condition",
@@ -51,8 +60,20 @@ _PREDICATE_ALIASES = {
     "observed_in": "studied_in",
 }
 
+_FINDING_TYPE_ALIASES = {
+    "support": "result",
+    "supporting": "result",
+    "supported": "result",
+    "negative": "negative_result",
+    "no_effect": "negative_result",
+    "method": "methodological",
+    "methods": "methodological",
+    "methodology": "methodological",
+}
+
 _VALID_ENTITY_TYPES = set(_ENTITY_TYPES.__args__)  # type: ignore[attr-defined]
 _VALID_PREDICATES = set(_PREDICATES.__args__)  # type: ignore[attr-defined]
+_VALID_FINDING_TYPES = set(_FINDING_TYPES.__args__)  # type: ignore[attr-defined]
 
 
 class Entity(BaseModel):
@@ -197,7 +218,6 @@ Extract ALL dated milestones, experiments, and events. Do NOT drop these.
 }
 """
 
-
 class CBORGExtractor:
     """Extract entities and generate text tiers via the CBORG API.
 
@@ -217,6 +237,8 @@ class CBORGExtractor:
         ``max_tokens`` for extraction calls.
     """
 
+    supports_batch_extraction = False
+
     def __init__(
         self,
         api_url: str,
@@ -227,8 +249,19 @@ class CBORGExtractor:
     ) -> None:
         self.model = model
         self._api_url = api_url.rstrip("/")
-        self._max_input_tokens = max_input_tokens
-        self._max_output_tokens = max_output_tokens or 16384
+        inferred_input_tokens, inferred_output_tokens = self._infer_model_token_limits(model)
+        if max_input_tokens is None:
+            self._max_input_tokens = inferred_input_tokens
+        elif inferred_input_tokens is None:
+            self._max_input_tokens = max_input_tokens
+        else:
+            self._max_input_tokens = min(max_input_tokens, inferred_input_tokens)
+
+        requested_output_tokens = max_output_tokens or _DEFAULT_EXTRACTION_MAX_OUTPUT_TOKENS
+        if inferred_output_tokens is None:
+            self._max_output_tokens = requested_output_tokens
+        else:
+            self._max_output_tokens = min(requested_output_tokens, inferred_output_tokens)
         self._client = httpx.Client(
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=120.0,
@@ -255,12 +288,12 @@ class CBORGExtractor:
             If the prompt exceeds the model's max input token estimate.
         """
         prompt = self._build_extraction_prompt(report, provenance)
-        total_chars = len(_EXTRACTION_SYSTEM) + len(prompt)
-        estimated_tokens = total_chars // 4  # conservative ~4 chars/token
-        if self._max_input_tokens and estimated_tokens > self._max_input_tokens:
+        estimated_tokens = self._estimate_prompt_tokens(_EXTRACTION_SYSTEM, prompt)
+        hard_input_limit = self._hard_input_limit_tokens()
+        if hard_input_limit is not None and estimated_tokens > hard_input_limit:
             raise ValueError(
-                f"Prompt too large (~{estimated_tokens} tokens) for model limit "
-                f"({self._max_input_tokens} tokens)"
+                f"Prompt too large (~{estimated_tokens} tokens) for hard skip limit "
+                f"({hard_input_limit} tokens; model max input {self._max_input_tokens})"
             )
         raw = self._chat(
             system=_EXTRACTION_SYSTEM,
@@ -349,6 +382,24 @@ class CBORGExtractor:
             f"Report:\n{report}"
         )
 
+    def _estimate_text_tokens(self, text: str) -> int:
+        return len(text) // 4
+
+    def _estimate_prompt_tokens(self, system: str, user: str) -> int:
+        return self._estimate_text_tokens(system) + self._estimate_text_tokens(user)
+
+    def _hard_input_limit_tokens(self) -> int | None:
+        if self._max_input_tokens is None:
+            return None
+        return max(1, int(self._max_input_tokens * _INPUT_HEADROOM_RATIO))
+
+    def _infer_model_token_limits(self, model: str) -> tuple[int | None, int | None]:
+        normalized = model.strip().lower()
+        for pattern, max_input_tokens, max_output_tokens in _MODEL_TOKEN_LIMITS:
+            if pattern in normalized:
+                return max_input_tokens, max_output_tokens
+        return None, None
+
     def _chat(self, system: str, user: str, max_tokens: int) -> str:
         """Call the /chat/completions endpoint and return the response text.
 
@@ -398,7 +449,13 @@ class CBORGExtractor:
                 time.sleep(wait)
                 continue
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"].strip()
+            payload = response.json()
+            choice = payload["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise ValueError(
+                    f"CBORG response hit max output tokens ({max_tokens}) for model {self.model}"
+                )
+            return choice["message"]["content"].strip()
 
         response.raise_for_status()  # raise on final failure
         return ""  # unreachable
@@ -475,6 +532,15 @@ class CBORGExtractor:
                 continue
             cleaned = dict(relation)
             cleaned["predicate"] = normalized
+            raw_finding_type = str(cleaned.get("finding_type", "result")).strip().lower()
+            normalized_finding_type = raw_finding_type.replace("-", "_").replace(" ", "_")
+            normalized_finding_type = _FINDING_TYPE_ALIASES.get(
+                normalized_finding_type,
+                normalized_finding_type,
+            )
+            if normalized_finding_type not in _VALID_FINDING_TYPES:
+                normalized_finding_type = "result"
+            cleaned["finding_type"] = normalized_finding_type
             sanitized.append(cleaned)
         return sanitized
 

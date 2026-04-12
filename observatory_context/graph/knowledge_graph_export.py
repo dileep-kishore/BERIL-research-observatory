@@ -181,6 +181,9 @@ class KnowledgeGraphExporter:
             if hasattr(client, "make_directory"):
                 for uri in (entry["from_uri"], entry["to_uri"]):
                     if uri not in created_dirs:
+                        if hasattr(client, "resource_exists") and client.resource_exists(uri):
+                            created_dirs.add(uri)
+                            continue
                         client.make_directory(uri)
                         created_dirs.add(uri)
             reason = f"co-occurs in {entry['weight']} finding(s)"

@@ -39,6 +39,19 @@ def _make_progress(**kwargs) -> Progress:
     )
 
 
+def _wait_for_processing(
+    client: OpenVikingObservatoryClient,
+    timeout: float | None,
+) -> None:
+    wait_note = "Waiting for OpenViking processing"
+    if timeout is not None:
+        wait_note = f"{wait_note} (timeout {int(timeout)}s)"
+    with _make_progress(transient=True) as progress:
+        task = progress.add_task(wait_note, total=None)
+        client.wait_until_processed(timeout=timeout)
+        progress.update(task, description="OpenViking processing complete")
+
+
 # ------------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------------
@@ -223,8 +236,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.wait:
         try:
-            with console.status("[bold]Waiting for OpenViking to finish processing..."):
-                client.wait_until_processed(timeout=args.wait_timeout)
+            _wait_for_processing(client, args.wait_timeout)
             console.print("[green]All resources processed.[/]")
         except TimeoutError as exc:
             console.print(f"[yellow]Warning:[/] {exc}")

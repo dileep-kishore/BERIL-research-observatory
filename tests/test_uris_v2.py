@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from observatory_context.uris import (
     build_corpus_uri,
+    build_projects_root_uri,
     build_registry_artifact_uri,
     build_registry_evidence_uri,
     build_registry_figure_uri,
@@ -34,6 +35,10 @@ def test_build_corpus_uri_with_file():
     assert build_corpus_uri("proj-01", "REPORT.md") == f"{_ROOT}/corpus/proj-01/REPORT.md"
 
 
+def test_build_projects_root_uri():
+    assert build_projects_root_uri() == f"{_ROOT}/projects"
+
+
 def test_build_wiki_uri():
     assert build_wiki_uri() == f"{_ROOT}/wiki"
 
@@ -43,7 +48,7 @@ def test_build_wiki_index_uri():
 
 
 def test_build_wiki_log_uri():
-    assert build_wiki_log_uri() == f"{_ROOT}/wiki/log.md"
+    assert build_wiki_log_uri() == f"{_ROOT}/logs/ingest"
 
 
 def test_build_wiki_topic_uri():

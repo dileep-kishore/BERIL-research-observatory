@@ -16,12 +16,16 @@ class FakeClient:
     def __init__(self) -> None:
         self.links: list[tuple[str, list[str], str]] = []
         self.directories: list[str] = []
+        self.existing: set[str] = set()
 
     def link_resources(self, from_uri: str, uris: list[str], reason: str = "") -> None:
         self.links.append((from_uri, uris, reason))
 
     def make_directory(self, uri: str) -> None:
         self.directories.append(uri)
+
+    def resource_exists(self, uri: str) -> bool:
+        return uri in self.existing
 
 
 def _bundle() -> tuple[object, nx.MultiDiGraph]:
@@ -111,3 +115,18 @@ def test_exporter_creates_relations_from_related_entities(tmp_path: Path) -> Non
             "co-occurs in 4 finding(s)",
         ),
     ]
+
+
+def test_exporter_skips_mkdir_for_existing_resources(tmp_path: Path) -> None:
+    bundle, graph = _bundle()
+    client = FakeClient()
+    client.existing = {
+        "viking://resources/observatory/knowledge-graph/entities/organisms/pseudomonas-putida",
+        "viking://resources/observatory/knowledge-graph/entities/concepts/czc-efflux",
+    }
+    exporter = KnowledgeGraphExporter(bundle=bundle, graph=graph)
+
+    count = exporter.create_relations(client)
+
+    assert count == 2
+    assert client.directories == []

@@ -6,6 +6,7 @@ import json
 import logging
 import shutil
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import mkdtemp
@@ -13,7 +14,9 @@ from typing import Any
 from uuid import uuid4
 
 import yaml
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
+from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -21,7 +24,9 @@ from rich.progress import (
     SpinnerColumn,
     TextColumn,
     TimeElapsedColumn,
+    TimeRemainingColumn,
 )
+from rich.table import Table
 
 from observatory_context._text import slugify
 from observatory_context.client import OpenVikingObservatoryClient
@@ -36,7 +41,7 @@ from observatory_context.registry.extract import extraction_to_registry_entries
 from observatory_context.registry.schema import Finding, Hypothesis
 from observatory_context.uris import (
     build_observatory_root_uri,
-    build_corpus_uri,
+    build_projects_root_uri,
     build_registry_uri,
     build_wiki_log_uri,
     build_wiki_uri,
@@ -60,8 +65,182 @@ def _make_progress() -> Progress:
         BarColumn(),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
+        TimeRemainingColumn(),
         console=console,
     )
+
+
+def _format_duration(seconds: float) -> str:
+    whole_seconds = max(0, int(seconds))
+    minutes, seconds = divmod(whole_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {seconds:02d}s"
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
+class IngestProgressTracker:
+    """Render persistent run + phase status during ingest."""
+
+    def __init__(self, console: Console, phase_order: tuple[str, ...]) -> None:
+        self.console = console
+        self.phase_order = phase_order
+        self.run_started_at = time.monotonic()
+        self.phase_started_at = self.run_started_at
+        self.item_started_at: float | None = None
+        self.current_phase = "Preparing run"
+        self.current_item = "—"
+        self.note = "Initializing"
+        self.completed_phases = 0
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=30),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            TextColumn("[cyan]{task.fields[current_item]}"),
+            TextColumn("[dim]{task.fields[note]}"),
+            console=console,
+        )
+        self.run_task = self.progress.add_task(
+            "Overall",
+            total=len(phase_order),
+            current_item="—",
+            note="waiting",
+        )
+        self.phase_task = self.progress.add_task(
+            "Current phase",
+            total=1,
+            current_item="—",
+            note="waiting",
+            visible=False,
+        )
+        self.live: Live | None = None
+
+    def __enter__(self) -> IngestProgressTracker:
+        self.live = Live(self._renderable(), console=self.console, refresh_per_second=4)
+        self.live.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self.live is not None:
+            self.live.__exit__(exc_type, exc, tb)
+            self.live = None
+
+    def _renderable(self) -> Group:
+        now = time.monotonic()
+        item_elapsed = "—"
+        if self.item_started_at is not None:
+            item_elapsed = _format_duration(now - self.item_started_at)
+
+        table = Table.grid(expand=True)
+        table.add_column(style="bold")
+        table.add_column()
+        table.add_row("Run", f"{self.completed_phases}/{len(self.phase_order)} phases complete")
+        table.add_row("Run elapsed", _format_duration(now - self.run_started_at))
+        table.add_row("Phase", self.current_phase)
+        table.add_row("Phase elapsed", _format_duration(now - self.phase_started_at))
+        table.add_row("Current item", self.current_item)
+        table.add_row("Item elapsed", item_elapsed)
+        table.add_row("Status", self.note)
+        return Group(
+            Panel(table, title="Ingest Status", border_style="blue"),
+            self.progress,
+        )
+
+    def refresh(self) -> None:
+        if self.live is not None:
+            self.live.update(self._renderable())
+
+    def start_phase(self, label: str, total: int, note: str = "running") -> None:
+        self.current_phase = label
+        self.phase_started_at = time.monotonic()
+        self.item_started_at = None
+        self.current_item = "—"
+        self.note = note
+        self.progress.update(
+            self.phase_task,
+            visible=True,
+            completed=0,
+            total=max(total, 1),
+            description=label,
+            current_item=self.current_item,
+            note=self.note,
+        )
+        self.progress.update(
+            self.run_task,
+            current_item=label,
+            note=note,
+        )
+        self.refresh()
+
+    def set_item(self, item: str, note: str = "running") -> None:
+        self.current_item = item or "—"
+        self.item_started_at = time.monotonic()
+        self.note = note
+        self.progress.update(
+            self.phase_task,
+            current_item=self.current_item,
+            note=self.note,
+        )
+        self.progress.update(
+            self.run_task,
+            current_item=self.current_item,
+            note=self.note,
+        )
+        self.refresh()
+
+    def advance(self, amount: int = 1, note: str | None = None) -> None:
+        if note is not None:
+            self.note = note
+        self.progress.update(
+            self.phase_task,
+            advance=amount,
+            current_item=self.current_item,
+            note=self.note,
+        )
+        self.progress.update(
+            self.run_task,
+            current_item=self.current_item,
+            note=self.note,
+        )
+        self.refresh()
+
+    def set_note(self, note: str) -> None:
+        self.note = note
+        self.progress.update(
+            self.phase_task,
+            current_item=self.current_item,
+            note=self.note,
+        )
+        self.progress.update(
+            self.run_task,
+            current_item=self.current_item,
+            note=self.note,
+        )
+        self.refresh()
+
+    def complete_phase(self, summary: str) -> str:
+        elapsed = _format_duration(time.monotonic() - self.phase_started_at)
+        self.completed_phases += 1
+        self.note = summary
+        self.progress.update(
+            self.run_task,
+            advance=1,
+            current_item=self.current_phase,
+            note=summary,
+        )
+        self.progress.update(
+            self.phase_task,
+            visible=False,
+            current_item=self.current_item,
+            note=summary,
+        )
+        self.refresh()
+        return elapsed
 
 
 class IngestPipeline:
@@ -88,6 +267,7 @@ class IngestPipeline:
         self.repo_root = repo_root
         self.staging_root = staging_root or Path(mkdtemp(prefix="observatory-ingest-"))
         self.uploader = BatchUploader(client)
+        self._tracker: IngestProgressTracker | None = None
         self.state_root = self.repo_root / "data" / "ingest"
         self.registry_state_root = self.state_root / "registry" / "projects"
         self.runs_root = self.state_root / "runs"
@@ -106,6 +286,18 @@ class IngestPipeline:
         shutil.rmtree(self.state_root, ignore_errors=True)
         shutil.rmtree(self.repo_root / "data" / "graph", ignore_errors=True)
         self._ensure_state_dirs()
+
+    def _phase_summary(
+        self,
+        label: str,
+        count: int,
+        elapsed: str | None = None,
+        unit: str = "items",
+    ) -> str:
+        summary = f"{count} {unit}"
+        if elapsed is not None:
+            summary = f"{summary} in {elapsed}"
+        return f"  [green]✓[/] {label}: {summary}"
 
     def _scope_key(self, project_ids: list[str] | None) -> str:
         return "__all__" if not project_ids else ",".join(sorted(project_ids))
@@ -335,37 +527,63 @@ class IngestPipeline:
         corpus_staging.mkdir(parents=True, exist_ok=True)
 
         staged: list[ResourceManifestItem] = []
-        with _make_progress() as progress:
-            task = progress.add_task("Phase 1: Uploading corpus", total=len(manifest))
+        tracker = self._tracker
+        if tracker is not None:
+            tracker.start_phase("Phase 1: Uploading corpus", len(manifest), note="Scanning source files")
             for item in manifest:
-                progress.update(task, description=f"Phase 1: {Path(item.source_path).name}")
+                source_name = Path(item.source_path).name
+                tracker.set_item(source_name, note="Checking remote state")
                 if resume and self.client.resource_exists(item.uri):
-                    progress.advance(task)
+                    tracker.advance(note="Already present, skipped")
                     continue
                 source = Path(item.source_path)
                 if not source.exists():
-                    progress.advance(task)
+                    tracker.advance(note="Missing local file, skipped")
                     continue
                 try:
                     content = source.read_text(encoding="utf-8")
                 except Exception:
-                    progress.advance(task)
+                    tracker.advance(note="Unreadable file, skipped")
                     continue
-                rel = source.name
+                rel = item.uri.removeprefix(f"{build_projects_root_uri()}/")
                 self.uploader.stage(corpus_staging, rel, content, metadata=item.metadata)
                 staged.append(item)
-                progress.advance(task)
+                tracker.advance(note="Staged for upload")
+        else:
+            with _make_progress() as progress:
+                task = progress.add_task("Phase 1: Uploading corpus", total=len(manifest))
+                for item in manifest:
+                    progress.update(task, description=f"Phase 1: {Path(item.source_path).name}")
+                    if resume and self.client.resource_exists(item.uri):
+                        progress.advance(task)
+                        continue
+                    source = Path(item.source_path)
+                    if not source.exists():
+                        progress.advance(task)
+                        continue
+                    try:
+                        content = source.read_text(encoding="utf-8")
+                    except Exception:
+                        progress.advance(task)
+                        continue
+                    rel = item.uri.removeprefix(f"{build_projects_root_uri()}/")
+                    self.uploader.stage(corpus_staging, rel, content, metadata=item.metadata)
+                    staged.append(item)
+                    progress.advance(task)
 
         if staged:
-            target_uri = build_corpus_uri("_batch")
+            target_uri = build_projects_root_uri()
+            if tracker is not None:
+                tracker.set_note(f"Uploading {len(staged)} staged resources")
             self.uploader.upload(
                 corpus_staging,
                 target_uri,
                 reason="Phase 1 corpus ingest",
                 wait=False,
+                preserve_structure=True,
             )
-
-        console.print(f"  [green]✓[/] Phase 1: {len(staged)} resources uploaded")
+        elapsed = tracker.complete_phase(f"{len(staged)} resources uploaded") if tracker is not None else None
+        console.print(self._phase_summary("Phase 1", len(staged), elapsed, unit="resources uploaded"))
         return len(staged)
 
     def phase2_extract_and_register(
@@ -389,6 +607,9 @@ class IngestPipeline:
             Number of registry entries created.
         """
         if extractor is None:
+            if self._tracker is not None:
+                self._tracker.start_phase("Phase 2: Extracting knowledge", 1, note="Skipped (no extractor)")
+                self._tracker.complete_phase("Skipped (no extractor)")
             console.print("  [dim]Phase 2: skipped (no extractor)[/]")
             return 0
 
@@ -398,15 +619,15 @@ class IngestPipeline:
         registry_staging.mkdir(parents=True, exist_ok=True)
 
         all_entries: list[Finding | Hypothesis] = []
-
-        with _make_progress() as progress:
-            task = progress.add_task("Phase 2: Extracting knowledge", total=len(project_ids))
+        tracker = self._tracker
+        if tracker is not None:
+            tracker.start_phase("Phase 2: Extracting knowledge", len(project_ids), note="Loading project reports")
             for pid in project_ids:
-                progress.update(task, description=f"Phase 2: {pid}")
+                tracker.set_item(pid, note="Reading report")
                 report_path = self.repo_root / "projects" / pid / "REPORT.md"
                 if not report_path.exists():
                     self._persist_project_entries(pid, [])
-                    progress.advance(task)
+                    tracker.advance(note="No REPORT.md, skipped")
                     continue
 
                 report_text = report_path.read_text(encoding="utf-8")
@@ -414,34 +635,63 @@ class IngestPipeline:
                 provenance: dict = {}
                 if prov_path.exists():
                     provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
-
                 try:
+                    tracker.set_note("Calling CBORG extractor")
                     extraction = extractor.extract_knowledge(report_text, provenance)
                 except (ValueError, Exception) as exc:
                     logger.warning("Extraction failed for %s: %s", pid, exc)
                     self._persist_project_entries(pid, [])
-                    progress.advance(task)
+                    tracker.advance(note=f"Skipped after extraction error: {exc}")
                     continue
-
-                # Throttle to stay under CBORG rate limits (~20 req/min)
-                time.sleep(3)
 
                 entries = extraction_to_registry_entries(extraction, pid)
                 self._persist_project_entries(pid, entries)
                 all_entries.extend(entries)
-                progress.advance(task)
+                tracker.advance(note=f"Persisted {len(entries)} registry entries")
+        else:
+            with _make_progress() as progress:
+                task = progress.add_task("Phase 2: Extracting knowledge", total=len(project_ids))
+                for pid in project_ids:
+                    progress.update(task, description=f"Phase 2: {pid}")
+                    report_path = self.repo_root / "projects" / pid / "REPORT.md"
+                    if not report_path.exists():
+                        self._persist_project_entries(pid, [])
+                        progress.advance(task)
+                        continue
+
+                    report_text = report_path.read_text(encoding="utf-8")
+                    prov_path = self.repo_root / "projects" / pid / "provenance.yaml"
+                    provenance: dict = {}
+                    if prov_path.exists():
+                        provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
+                    try:
+                        extraction = extractor.extract_knowledge(report_text, provenance)
+                    except (ValueError, Exception) as exc:
+                        logger.warning("Extraction failed for %s: %s", pid, exc)
+                        self._persist_project_entries(pid, [])
+                        progress.advance(task)
+                        continue
+
+                    entries = extraction_to_registry_entries(extraction, pid)
+                    self._persist_project_entries(pid, entries)
+                    all_entries.extend(entries)
+                    progress.advance(task)
 
         staged_count = self._stage_registry_snapshot(registry_staging)
         if staged_count:
             target_uri = build_registry_uri()
+            if tracker is not None:
+                tracker.set_note(f"Uploading {staged_count} registry files")
             self.uploader.upload(
                 registry_staging,
                 target_uri,
                 reason="Phase 2 registry ingest",
                 wait=False,
+                preserve_structure=True,
             )
 
-        console.print(f"  [green]✓[/] Phase 2: {len(all_entries)} registry entries created")
+        elapsed = tracker.complete_phase(f"{len(all_entries)} registry entries created") if tracker is not None else None
+        console.print(self._phase_summary("Phase 2", len(all_entries), elapsed, unit="registry entries created"))
         return len(all_entries)
 
     def phase3_build_graph(
@@ -471,6 +721,9 @@ class IngestPipeline:
             findings, hypotheses = self._load_persisted_entries()
 
         if not findings and not hypotheses:
+            if self._tracker is not None:
+                self._tracker.start_phase("Phase 3: Building graph", 1, note="Skipped (no registry entries)")
+                self._tracker.complete_phase("Skipped (no registry entries)")
             console.print("  [dim]Phase 3: skipped (no registry entries)[/]")
             return 0
 
@@ -494,17 +747,14 @@ class IngestPipeline:
             for ref in h.related_entities:
                 entity_refs.append((ref.type, ref.label))
 
-        # Resolve all entities
-        with _make_progress() as progress:
-            task = progress.add_task(
-                "Phase 3: Resolving entities", total=3,
-            )
-
+        tracker = self._tracker
+        if tracker is not None:
+            tracker.start_phase("Phase 3: Building graph", 3, note="Resolving entity aliases")
+            tracker.set_item("entity-resolution", note=f"Resolving {len(entity_refs)} entity references")
             resolved = resolver.resolve_batch(entity_refs)
-            progress.advance(task)
+            tracker.advance(note=f"Resolved {len(resolved)} canonical entities")
 
-            # Add project nodes
-            progress.update(task, description="Phase 3: Building graph")
+            tracker.set_item("graph-build", note="Adding project, entity, finding, and hypothesis nodes")
             project_ids = sorted(
                 {finding.project_id for finding in findings}
                 | {project_id for hypothesis in hypotheses for project_id in hypothesis.project_ids}
@@ -518,7 +768,6 @@ class IngestPipeline:
                         title = first_line[2:].strip()
                 builder.add_project(pid, title)
 
-            # Add resolved entities
             for raw_label, resolved_entity in resolved.items():
                 builder.add_entity(
                     canonical_name=resolved_entity.canonical,
@@ -526,7 +775,6 @@ class IngestPipeline:
                     aliases=resolved_entity.aliases,
                 )
 
-            # Add findings with resolved entity links
             for f in findings:
                 entity_map = {}
                 for ref in f.related_entities:
@@ -536,7 +784,6 @@ class IngestPipeline:
                         entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
                 builder.add_finding(f, entity_map)
 
-            # Add hypotheses with resolved entity links
             for h in hypotheses:
                 entity_map = {}
                 for ref in h.related_entities:
@@ -545,18 +792,15 @@ class IngestPipeline:
                         from observatory_context.graph.builder import _entity_node_id
                         entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
                 builder.add_hypothesis(h, entity_map)
-            progress.advance(task)
+            tracker.advance(note="Graph nodes and edges built")
 
-            # Community detection + report
-            progress.update(task, description="Phase 3: Communities + report")
+            tracker.set_item("communities", note="Running community detection and writing graph artifacts")
             communities = builder.build_communities()
             builder.serialize(graph_path)
 
-            # Save updated aliases
             from observatory_context.graph.aliases import save_aliases
             save_aliases(resolver._aliases, aliases_path)
 
-            # Save communities
             import json
             communities_path = graph_dir / "communities.json"
             communities_path.write_text(
@@ -564,18 +808,98 @@ class IngestPipeline:
                 encoding="utf-8",
             )
 
-            # Generate GRAPH_REPORT.md
             report_content = generate_graph_report(builder)
             report_path = graph_dir / "GRAPH_REPORT.md"
             save_report(report_content, report_path)
-            progress.advance(task)
+            tracker.advance(note="Graph artifacts written")
+        else:
+            with _make_progress() as progress:
+                task = progress.add_task(
+                    "Phase 3: Resolving entities", total=3,
+                )
+
+                resolved = resolver.resolve_batch(entity_refs)
+                progress.advance(task)
+
+                # Add project nodes
+                progress.update(task, description="Phase 3: Building graph")
+                project_ids = sorted(
+                    {finding.project_id for finding in findings}
+                    | {project_id for hypothesis in hypotheses for project_id in hypothesis.project_ids}
+                )
+                for pid in project_ids:
+                    readme_path = self.repo_root / "projects" / pid / "README.md"
+                    title = pid
+                    if readme_path.exists():
+                        first_line = readme_path.read_text(encoding="utf-8").split("\n")[0]
+                        if first_line.startswith("# "):
+                            title = first_line[2:].strip()
+                    builder.add_project(pid, title)
+
+                # Add resolved entities
+                for raw_label, resolved_entity in resolved.items():
+                    builder.add_entity(
+                        canonical_name=resolved_entity.canonical,
+                        entity_type=resolved_entity.entity_type,
+                        aliases=resolved_entity.aliases,
+                    )
+
+                # Add findings with resolved entity links
+                for f in findings:
+                    entity_map = {}
+                    for ref in f.related_entities:
+                        if ref.label in resolved:
+                            r = resolved[ref.label]
+                            from observatory_context.graph.builder import _entity_node_id
+                            entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
+                    builder.add_finding(f, entity_map)
+
+                # Add hypotheses with resolved entity links
+                for h in hypotheses:
+                    entity_map = {}
+                    for ref in h.related_entities:
+                        if ref.label in resolved:
+                            r = resolved[ref.label]
+                            from observatory_context.graph.builder import _entity_node_id
+                            entity_map[ref.label] = _entity_node_id(r.entity_type, r.canonical)
+                    builder.add_hypothesis(h, entity_map)
+                progress.advance(task)
+
+                # Community detection + report
+                progress.update(task, description="Phase 3: Communities + report")
+                communities = builder.build_communities()
+                builder.serialize(graph_path)
+
+                # Save updated aliases
+                from observatory_context.graph.aliases import save_aliases
+                save_aliases(resolver._aliases, aliases_path)
+
+                # Save communities
+                import json
+                communities_path = graph_dir / "communities.json"
+                communities_path.write_text(
+                    json.dumps(communities, indent=2, default=str),
+                    encoding="utf-8",
+                )
+
+                # Generate GRAPH_REPORT.md
+                report_content = generate_graph_report(builder)
+                report_path = graph_dir / "GRAPH_REPORT.md"
+                save_report(report_content, report_path)
+                progress.advance(task)
 
         node_count = builder.G.number_of_nodes()
-        console.print(
+        elapsed = tracker.complete_phase(
+            f"{node_count} nodes, {builder.G.number_of_edges()} edges, {len(communities)} communities"
+        ) if tracker is not None else None
+        summary = (
             f"  [green]✓[/] Phase 3: {node_count} nodes, "
             f"{builder.G.number_of_edges()} edges, "
             f"{len(communities)} communities"
         )
+        if elapsed is not None:
+            summary = f"{summary} in {elapsed}"
+        console.print(summary)
         return node_count
 
     def _load_staged_entries(self) -> tuple[list[Finding], list[Hypothesis]]:
@@ -667,24 +991,43 @@ class IngestPipeline:
     ) -> int:
         """Export synthesized knowledge into the OpenViking `knowledge-graph/` namespace."""
         if not bundle.entities and not bundle.hypotheses and not bundle.timeline_events:
+            if self._tracker is not None:
+                self._tracker.start_phase("Phase 4: Exporting knowledge graph", 1, note="Skipped (empty synthesis bundle)")
+                self._tracker.complete_phase("Skipped (empty synthesis bundle)")
             console.print("  [dim]Phase 4: skipped (empty synthesis bundle)[/]")
             return 0
         export_staging = self.staging_root / "knowledge-layer"
         shutil.rmtree(export_staging, ignore_errors=True)
         export_staging.mkdir(parents=True, exist_ok=True)
         exporter = KnowledgeGraphExporter(bundle=bundle, graph=graph)
+        tracker = self._tracker
+        if tracker is not None:
+            tracker.start_phase("Phase 4: Exporting knowledge graph", 3, note="Rendering knowledge-layer files")
         file_count = exporter.export_all(export_staging)
+        if tracker is not None:
+            tracker.set_item("knowledge-layer", note=f"Uploading {file_count} knowledge-graph files")
         self.uploader.upload(
             export_staging,
             build_observatory_root_uri(),
             reason="Phase 4 knowledge-graph export",
-            wait=False,
+            wait=True,
         )
+        if tracker is not None:
+            tracker.advance(note="Files uploaded and processed")
+            tracker.set_item("relations", note="Creating knowledge-graph relations")
         relation_count = exporter.create_relations(self.client)
-        console.print(
+        if tracker is not None:
+            tracker.advance(note="Graph relations created")
+        elapsed = tracker.complete_phase(
+            f"{file_count} files and {relation_count} relations exported"
+        ) if tracker is not None else None
+        summary = (
             f"  [green]✓[/] Phase 4: {file_count} knowledge-graph files and "
             f"{relation_count} relations exported"
         )
+        if elapsed is not None:
+            summary = f"{summary} in {elapsed}"
+        console.print(summary)
         return file_count
 
     def phase5_compile_wiki(
@@ -716,6 +1059,9 @@ class IngestPipeline:
             findings, hypotheses = self._load_persisted_entries()
 
         if not bundle.entities and not bundle.hypotheses and not bundle.topics:
+            if self._tracker is not None:
+                self._tracker.start_phase("Phase 5: Compiling wiki", 1, note="Skipped (empty synthesis bundle)")
+                self._tracker.complete_phase("Skipped (empty synthesis bundle)")
             console.print("  [dim]Phase 5: skipped (empty synthesis bundle)[/]")
             return 0
 
@@ -728,14 +1074,13 @@ class IngestPipeline:
         findings_by_id = {finding.finding_id: finding for finding in findings}
         hypotheses_by_id = {hypothesis.hypothesis_id: hypothesis for hypothesis in hypotheses}
         total_pages = len(bundle.entities) + len(bundle.hypotheses) + len(bundle.topics) + 1
-
-        with _make_progress() as progress:
-            task = progress.add_task("Phase 5: Compiling wiki", total=total_pages)
-
+        tracker = self._tracker
+        if tracker is not None:
+            tracker.start_phase("Phase 5: Compiling wiki", total_pages, note="Rendering wiki pages")
             from observatory_context.uris import _ENTITY_TYPE_PLURALS
 
             for entity in bundle.entities:
-                progress.update(task, description=f"Phase 5: entity/{entity.slug}")
+                tracker.set_item(f"entity/{entity.slug}", note="Compiling entity page")
                 content = compile_entity_page_from_synthesis(
                     entity,
                     findings_by_id=findings_by_id,
@@ -754,10 +1099,10 @@ class IngestPipeline:
                     )
                 )
                 page_count += 1
-                progress.advance(task)
+                tracker.advance(note="Entity page staged")
 
             for hypothesis in bundle.hypotheses:
-                progress.update(task, description=f"Phase 5: hypothesis/{hypothesis.slug}")
+                tracker.set_item(f"hypothesis/{hypothesis.slug}", note="Compiling hypothesis page")
                 content = compile_hypothesis_page_from_synthesis(
                     hypothesis,
                     findings_by_id=findings_by_id,
@@ -775,10 +1120,10 @@ class IngestPipeline:
                     )
                 )
                 page_count += 1
-                progress.advance(task)
+                tracker.advance(note="Hypothesis page staged")
 
             for topic in bundle.topics:
-                progress.update(task, description=f"Phase 5: topic/{topic.slug}")
+                tracker.set_item(f"topic/{topic.slug}", note="Compiling topic page")
                 content = compile_topic_page_from_synthesis(
                     topic,
                     findings_by_id=findings_by_id,
@@ -796,24 +1141,102 @@ class IngestPipeline:
                     )
                 )
                 page_count += 1
-                progress.advance(task)
+                tracker.advance(note="Topic page staged")
 
-            progress.update(task, description="Phase 5: index")
+            tracker.set_item("index", note="Compiling index page")
             index_content = build_index_markdown(wiki_entries)
             self.uploader.stage(wiki_staging, "index.md", index_content)
             page_count += 1
-            progress.advance(task)
+            tracker.advance(note="Index page staged")
+        else:
+            with _make_progress() as progress:
+                task = progress.add_task("Phase 5: Compiling wiki", total=total_pages)
+
+                from observatory_context.uris import _ENTITY_TYPE_PLURALS
+
+                for entity in bundle.entities:
+                    progress.update(task, description=f"Phase 5: entity/{entity.slug}")
+                    content = compile_entity_page_from_synthesis(
+                        entity,
+                        findings_by_id=findings_by_id,
+                        hypotheses_by_id=hypotheses_by_id,
+                    )
+                    plural = _ENTITY_TYPE_PLURALS.get(entity.entity_type, f"{entity.entity_type}s")
+                    rel_path = f"entities/{plural}/{entity.slug}.md"
+                    self.uploader.stage(wiki_staging, rel_path, content)
+                    wiki_entries.append(
+                        WikiEntry(
+                            slug=entity.slug,
+                            section=f"entities/{plural}",
+                            summary=entity.canonical_name,
+                            source_count=len(entity.finding_ids),
+                            coverage=entity.coverage,
+                        )
+                    )
+                    page_count += 1
+                    progress.advance(task)
+
+                for hypothesis in bundle.hypotheses:
+                    progress.update(task, description=f"Phase 5: hypothesis/{hypothesis.slug}")
+                    content = compile_hypothesis_page_from_synthesis(
+                        hypothesis,
+                        findings_by_id=findings_by_id,
+                        hypotheses_by_id=hypotheses_by_id,
+                    )
+                    rel_path = f"hypotheses/{hypothesis.slug}.md"
+                    self.uploader.stage(wiki_staging, rel_path, content)
+                    wiki_entries.append(
+                        WikiEntry(
+                            slug=hypothesis.slug,
+                            section="hypotheses",
+                            summary=hypothesis.statement[:80],
+                            source_count=len(hypothesis.supporting_findings),
+                            coverage=hypothesis.coverage,
+                        )
+                    )
+                    page_count += 1
+                    progress.advance(task)
+
+                for topic in bundle.topics:
+                    progress.update(task, description=f"Phase 5: topic/{topic.slug}")
+                    content = compile_topic_page_from_synthesis(
+                        topic,
+                        findings_by_id=findings_by_id,
+                        hypotheses_by_id=hypotheses_by_id,
+                    )
+                    rel_path = f"topics/{topic.slug}.md"
+                    self.uploader.stage(wiki_staging, rel_path, content)
+                    wiki_entries.append(
+                        WikiEntry(
+                            slug=topic.slug,
+                            section="topics",
+                            summary=topic.title,
+                            source_count=len(topic.finding_ids),
+                            coverage="high" if len(topic.finding_ids) >= 5 else "medium" if len(topic.finding_ids) >= 2 else "low",
+                        )
+                    )
+                    page_count += 1
+                    progress.advance(task)
+
+                progress.update(task, description="Phase 5: index")
+                index_content = build_index_markdown(wiki_entries)
+                self.uploader.stage(wiki_staging, "index.md", index_content)
+                page_count += 1
+                progress.advance(task)
 
         # Upload wiki batch
         target_uri = build_wiki_uri()
+        if tracker is not None:
+            tracker.set_note(f"Uploading {page_count} wiki pages")
         self.uploader.upload(
             wiki_staging,
             target_uri,
             reason="Phase 5 wiki compilation",
-            wait=False,
+            wait=True,
         )
 
-        console.print(f"  [green]✓[/] Phase 5: {page_count} wiki pages compiled")
+        elapsed = tracker.complete_phase(f"{page_count} wiki pages compiled") if tracker is not None else None
+        console.print(self._phase_summary("Phase 5", page_count, elapsed, unit="wiki pages compiled"))
         return page_count
 
     def phase3_compile_wiki(
@@ -829,7 +1252,7 @@ class IngestPipeline:
     def phase5_update_index_and_log(
         self, project_ids: list[str], phase_results: dict[str, int]
     ) -> None:
-        """Append a log entry to wiki/log.md.
+        """Write a run log entry under the ingest log collection.
 
         Parameters
         ----------
@@ -839,24 +1262,43 @@ class IngestPipeline:
             Counts returned by each phase.
         """
         entry = self.build_log_entry("ingest", project_ids, phase_results)
+        log_staging = self.staging_root / "log"
+        shutil.rmtree(log_staging, ignore_errors=True)
+        log_staging.mkdir(parents=True, exist_ok=True)
+        log_name = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ-ingest.md")
+        self.uploader.stage(log_staging, log_name, entry, metadata={"kind": "log", "projects": project_ids})
         log_uri = build_wiki_log_uri()
-        for attempt in range(8):
+        tracker = self._tracker
+        if tracker is not None:
+            tracker.start_phase("Phase 6: Writing ingest log", 1, note="Uploading run log entry")
+            tracker.set_item(log_name, note="Uploading run log entry")
+        for attempt in range(60):
             try:
-                self.client.add_text_resource(
-                    uri=log_uri,
-                    content=entry,
-                    metadata={"kind": "log", "projects": project_ids},
+                self.uploader.upload(
+                    log_staging,
+                    log_uri,
                     reason="Phase 6 — update wiki log",
-                    wait=False,
+                    wait=True,
                 )
                 break
             except Exception as exc:
-                if "lock" in str(exc).lower() and attempt < 7:
+                if "lock" in str(exc).lower() and attempt < 59:
                     delay = min(2 ** attempt, 30)
-                    logger.warning("Phase 6 lock contention, retrying in %ds (attempt %d/8)...", delay, attempt + 1)
+                    if tracker is not None:
+                        tracker.set_note(
+                            f"Waiting on wiki lock ({attempt + 1}/60), retry in {delay}s"
+                        )
+                    logger.warning(
+                        "Phase 6 lock contention, retrying in %ds (attempt %d/60)...",
+                        delay,
+                        attempt + 1,
+                    )
                     time.sleep(delay)
                 else:
                     raise RuntimeError(f"Phase 6 log entry failed: {exc}") from exc
+        if tracker is not None:
+            elapsed = tracker.complete_phase("Ingest log entry uploaded")
+            console.print(self._phase_summary("Phase 6", 1, elapsed, unit="log entry written"))
 
     def phase4_update_index_and_log(
         self, project_ids: list[str], phase_results: dict[str, int]
@@ -967,65 +1409,86 @@ class IngestPipeline:
         bundle: KnowledgeSynthesisBundle | None = None
         graph: Any | None = None
         current_phase = "corpus"
+        tracker_cm = IngestProgressTracker(console, _PHASE_SEQUENCE) if console.is_terminal else nullcontext(None)
         try:
-            if not self._phase_is_complete(checkpoint, "corpus"):
-                phase_results["corpus"] = self.phase1_upload_corpus(manifest, resume=resume)
-                checkpoint = self._mark_phase_completed(checkpoint, "corpus", phase_results["corpus"])
-            else:
-                phase_results["corpus"] = int(checkpoint["phases"]["corpus"].get("count", 0))
+            with tracker_cm as tracker:
+                self._tracker = tracker
+                if tracker is not None:
+                    completed_phases = sum(
+                        1 for phase in _PHASE_SEQUENCE if checkpoint["phases"][phase]["status"] == "completed"
+                    )
+                    tracker.completed_phases = completed_phases
+                    tracker.progress.update(
+                        tracker.run_task,
+                        completed=completed_phases,
+                        current_item="resume" if completed_phases else "starting",
+                        note="Resuming checkpoint" if completed_phases else "Starting new run",
+                    )
+                    tracker.refresh()
+                if not self._phase_is_complete(checkpoint, "corpus"):
+                    phase_results["corpus"] = self.phase1_upload_corpus(manifest, resume=resume)
+                    checkpoint = self._mark_phase_completed(checkpoint, "corpus", phase_results["corpus"])
+                else:
+                    phase_results["corpus"] = int(checkpoint["phases"]["corpus"].get("count", 0))
 
-            current_phase = "registry"
-            if not self._phase_is_complete(checkpoint, "registry"):
-                phase_results["registry"] = self.phase2_extract_and_register(manifest, extractor=extractor)
-                checkpoint = self._mark_phase_completed(checkpoint, "registry", phase_results["registry"])
-            else:
-                phase_results["registry"] = int(checkpoint["phases"]["registry"].get("count", 0))
+                current_phase = "registry"
+                if not self._phase_is_complete(checkpoint, "registry"):
+                    phase_results["registry"] = self.phase2_extract_and_register(manifest, extractor=extractor)
+                    checkpoint = self._mark_phase_completed(checkpoint, "registry", phase_results["registry"])
+                else:
+                    phase_results["registry"] = int(checkpoint["phases"]["registry"].get("count", 0))
 
-            current_phase = "graph"
-            if not self._phase_is_complete(checkpoint, "graph"):
-                phase_results["graph"] = self.phase3_build_graph(manifest)
-                checkpoint = self._mark_phase_completed(checkpoint, "graph", phase_results["graph"])
-            else:
-                phase_results["graph"] = int(checkpoint["phases"]["graph"].get("count", 0))
+                current_phase = "graph"
+                if not self._phase_is_complete(checkpoint, "graph"):
+                    phase_results["graph"] = self.phase3_build_graph(manifest)
+                    checkpoint = self._mark_phase_completed(checkpoint, "graph", phase_results["graph"])
+                else:
+                    phase_results["graph"] = int(checkpoint["phases"]["graph"].get("count", 0))
 
-            if (
-                not self._phase_is_complete(checkpoint, "knowledge_graph")
-                or not self._phase_is_complete(checkpoint, "wiki")
-            ):
-                bundle, graph = self.build_synthesis_bundle(manifest)
+                if (
+                    not self._phase_is_complete(checkpoint, "knowledge_graph")
+                    or not self._phase_is_complete(checkpoint, "wiki")
+                ):
+                    if tracker is not None:
+                        tracker.set_note("Building synthesis bundle")
+                    bundle, graph = self.build_synthesis_bundle(manifest)
 
-            current_phase = "knowledge_graph"
-            if not self._phase_is_complete(checkpoint, "knowledge_graph"):
-                assert bundle is not None
-                phase_results["knowledge_graph"] = self.phase4_export_knowledge_graph(bundle, graph=graph)
-                checkpoint = self._mark_phase_completed(
-                    checkpoint,
-                    "knowledge_graph",
-                    phase_results["knowledge_graph"],
-                )
-            else:
-                phase_results["knowledge_graph"] = int(
-                    checkpoint["phases"]["knowledge_graph"].get("count", 0)
-                )
+                current_phase = "knowledge_graph"
+                if not self._phase_is_complete(checkpoint, "knowledge_graph"):
+                    assert bundle is not None
+                    phase_results["knowledge_graph"] = self.phase4_export_knowledge_graph(bundle, graph=graph)
+                    checkpoint = self._mark_phase_completed(
+                        checkpoint,
+                        "knowledge_graph",
+                        phase_results["knowledge_graph"],
+                    )
+                else:
+                    phase_results["knowledge_graph"] = int(
+                        checkpoint["phases"]["knowledge_graph"].get("count", 0)
+                    )
 
-            current_phase = "wiki"
-            if not self._phase_is_complete(checkpoint, "wiki"):
-                assert bundle is not None
-                phase_results["wiki"] = self.phase5_compile_wiki(manifest, bundle)
-                checkpoint = self._mark_phase_completed(checkpoint, "wiki", phase_results["wiki"])
-            else:
-                phase_results["wiki"] = int(checkpoint["phases"]["wiki"].get("count", 0))
+                current_phase = "wiki"
+                if not self._phase_is_complete(checkpoint, "wiki"):
+                    assert bundle is not None
+                    phase_results["wiki"] = self.phase5_compile_wiki(manifest, bundle)
+                    checkpoint = self._mark_phase_completed(checkpoint, "wiki", phase_results["wiki"])
+                else:
+                    phase_results["wiki"] = int(checkpoint["phases"]["wiki"].get("count", 0))
 
-            current_phase = "log"
-            effective_project_ids = project_ids or [item.project_ids[0] for item in manifest if item.project_ids]
-            unique_project_ids = list(dict.fromkeys(effective_project_ids))
-            if not self._phase_is_complete(checkpoint, "log"):
-                self.phase5_update_index_and_log(unique_project_ids, phase_results)
-                checkpoint = self._mark_phase_completed(checkpoint, "log", 1)
+                current_phase = "log"
+                effective_project_ids = project_ids or [item.project_ids[0] for item in manifest if item.project_ids]
+                unique_project_ids = list(dict.fromkeys(effective_project_ids))
+                if not self._phase_is_complete(checkpoint, "log"):
+                    self.phase5_update_index_and_log(unique_project_ids, phase_results)
+                    checkpoint = self._mark_phase_completed(checkpoint, "log", 1)
 
-            checkpoint["status"] = "completed"
-            self._save_checkpoint(checkpoint)
-            return phase_results
+                checkpoint["status"] = "completed"
+                self._save_checkpoint(checkpoint)
+                if tracker is not None:
+                    tracker.set_note("Run completed")
+                return phase_results
         except Exception as exc:
             self._mark_run_failed(checkpoint, current_phase, exc)
             raise
+        finally:
+            self._tracker = None
