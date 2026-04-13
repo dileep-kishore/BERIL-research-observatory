@@ -55,7 +55,7 @@ data/               # Shared data extracts reusable across projects
 | `/synthesize` | Read analysis outputs, compare against literature, and draft findings |
 | `/submit` | Submit a project for automated review |
 | `/knowledge` | Search projects, findings, figures, and data artifacts across the observatory |
-| `/build-registry` | Regenerate the knowledge registry index files |
+| `/build-registry` | Re-ingest observatory resources into OpenViking (resumable checkpoints + wiki cache resume) |
 | `/cts` | Run batch compute jobs on the CTS cluster |
 
 > **Note**: Hypothesis generation, research planning, and notebook creation are handled automatically as part of the research workflow (Path 1 below). You don't need to invoke them separately.

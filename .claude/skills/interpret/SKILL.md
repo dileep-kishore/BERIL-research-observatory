@@ -39,7 +39,7 @@ If no `project_id` argument is provided, detect from the current working directo
 
 ### Step 3: Check Knowledge Graph Context and Memory
 
-Run `uv run scripts/query_knowledge_unified.py search "<project topic>" --with-memory` to get related findings blended with past insights.
+Run `uv run scripts/query_knowledge_unified.py --with-memory search "<project topic>"` to get related findings blended with past insights.
 
 Also run `uv run scripts/query_knowledge_unified.py recall "<topic>" --store conversations` to check for past observations ("we saw this before" déjà vu detection).
 

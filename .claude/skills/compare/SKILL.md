@@ -24,7 +24,7 @@ Where `<A>` and `<B>` are project IDs, organism entity IDs, or other entity IDs.
 Check if the arguments match:
 1. **Project IDs**: Run `uv run scripts/query_knowledge_unified.py project <id>` for each
 2. **Entity URIs or IDs**: Run `uv run scripts/query_knowledge_unified.py entities <type>` to inspect candidate entities (check organism, then gene, pathway, method, concept)
-3. **Entity names**: If not exact matches, run `uv run scripts/query_knowledge_unified.py search "<name>" --scope graph --tier L1` to find graph entries by name or context
+3. **Entity names**: If not exact matches, run `uv run scripts/query_knowledge_unified.py --scope graph --tier L1 search "<name>"` to find graph entries by name or context
 
 If one arg matches a project and the other an entity, tell the user and ask for clarification.
 
@@ -62,7 +62,7 @@ If both arguments are organism entity IDs:
    ```bash
    uv run scripts/query_knowledge_unified.py traverse <org_entity_uri> --hops 2
    ```
-2. If needed, run `uv run scripts/query_knowledge_unified.py search "<organism name>" --scope graph --tier L1`
+2. If needed, run `uv run scripts/query_knowledge_unified.py --scope graph --tier L1 search "<organism name>"`
 3. Compare:
 
 | Dimension | Organism A | Organism B |

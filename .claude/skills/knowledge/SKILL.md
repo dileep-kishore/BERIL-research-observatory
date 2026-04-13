@@ -31,8 +31,17 @@ Search the observatory's knowledge via OpenViking. OpenViking must be running fo
 /knowledge remember <store> <title> <body> — write a memory entry
 /knowledge ingest-entity <type> <id> --profile-json <json> — create an entity
 /knowledge pitfalls [topic]                  — list/search pitfalls
+/knowledge add-pitfall <slug> --json <json> — add a pitfall entry
 /knowledge discoveries [topic]               — list/search discoveries
+/knowledge add-discovery <slug> --json <json> — add a discovery entry
 /knowledge ideas [--status STATUS]           — list/search research ideas
+/knowledge add-idea <slug> --json <json>     — add a research idea
+/knowledge update-idea <slug> --json <json>  — update a research idea
+/knowledge session <start|status|commit|clear> — manage query session state
+/knowledge link <from_uri> <to_uri> [--reason <text>] — create graph relation
+/knowledge unlink <from_uri> <to_uri>        — remove graph relation
+/knowledge stat <uri>                         — inspect resource metadata
+/knowledge drill <query> [--pick N --depth L1|L2] — progressive drill-down
 /knowledge wiki-index                        — list all compiled wiki topic pages
 /knowledge wiki-topic <slug>                 — read a compiled wiki topic page by slug
 /knowledge wiki-lint                         — check wiki for coverage gaps and stale topics
@@ -47,6 +56,7 @@ These flags are defined on the parent parser. Place them **before** the subcomma
 | `--tier L0\|L1\|L2` | `search`, `figures`, `data`, `entities`, `connections`, `browse`, `traverse` | Content detail level (default L2). L1 for overviews, L0 for one-liners. |
 | `--with-memory` | `search` only | Blend memory results (journal, patterns, conversations) into search. |
 | `--scope all\|resources\|memory\|graph` | `search` only | Restrict search scope. `resources` = projects + notes, `graph` = entities/hypotheses, `memory` = memories only. |
+| `--session <id>` | `search` only | Use a specific OpenViking query session for context-aware search. |
 
 Example with flags before subcommand:
 ```bash
@@ -99,6 +109,15 @@ Map subcommands directly:
 - `/knowledge discoveries <topic>` → `discoveries "<topic>"`
 - `/knowledge ideas` → `ideas`
 - `/knowledge ideas --status <status>` → `ideas --status <status>`
+- `/knowledge add-pitfall <slug> --json <json>` → `add-pitfall <slug> --json <json>`
+- `/knowledge add-discovery <slug> --json <json>` → `add-discovery <slug> --json <json>`
+- `/knowledge add-idea <slug> --json <json>` → `add-idea <slug> --json <json>`
+- `/knowledge update-idea <slug> --json <json>` → `update-idea <slug> --json <json>`
+- `/knowledge session <action>` → `session <start|status|commit|clear>`
+- `/knowledge link <from_uri> <to_uri>` → `link <from_uri> <to_uri>`
+- `/knowledge unlink <from_uri> <to_uri>` → `unlink <from_uri> <to_uri>`
+- `/knowledge stat <uri>` → `stat <uri>`
+- `/knowledge drill <query>` → `drill <query>`
 - `/knowledge wiki-index` → `wiki-index`
 - `/knowledge wiki-topic <slug>` → `wiki-topic <slug>`
 - `/knowledge wiki-lint` → `wiki-lint`

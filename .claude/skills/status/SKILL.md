@@ -23,8 +23,8 @@ No arguments required.
 
 Run:
 ```bash
-uv run scripts/query_knowledge_unified.py hypotheses testing --tier L1
-uv run scripts/query_knowledge_unified.py hypotheses proposed --tier L1
+uv run scripts/query_knowledge_unified.py --tier L1 hypotheses testing
+uv run scripts/query_knowledge_unified.py --tier L1 hypotheses proposed
 uv run scripts/query_knowledge_unified.py timeline --since 7d
 uv run scripts/query_knowledge_unified.py recall "recent work" --store journal --limit 3
 ```

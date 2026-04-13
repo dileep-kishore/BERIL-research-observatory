@@ -249,12 +249,15 @@ generated_data:
 After writing provenance.yaml, rebuild the knowledge graph. The ingest script automatically extracts entities, relations, hypotheses, and timeline events from REPORT.md via CBORG, deduplicates across projects, and uploads as a single batch:
 
 ```bash
-uv run scripts/viking_ingest.py --graph-only --wait
+uv run scripts/viking_ingest.py --project {project_id} --wait --wait-timeout 7200
 ```
 
-This is incremental — only projects whose REPORT.md or provenance.yaml changed since last extraction are re-extracted via CBORG. Cached results are used for all other projects. The entire merged graph is re-uploaded atomically.
+This is incremental and resumable:
+- Checkpoints are written under `data/ingest/runs/<run_id>/checkpoint.json` and reruns resume from the first incomplete phase.
+- Wiki compilation reuses cached pages from `data/ingest/runs/<run_id>/wiki-cache/` to avoid regenerating completed topic pages.
+- Local ingest state and staging/cache artifacts live under `data/ingest/` (gitignored).
 
-**V2 architecture note**: If the observatory is running the wiki-based V2 pipeline, prefer checking for gaps and reading compiled syntheses over running graph rebuilds manually:
+Prefer checking for gaps and reading compiled syntheses after ingest:
 
 ```bash
 # Check what's missing or stale in the wiki
@@ -264,14 +267,14 @@ uv run scripts/query_knowledge_unified.py wiki-lint
 uv run scripts/query_knowledge_unified.py wiki-topic <slug>
 ```
 
-Use `--graph-only` (above) to trigger incremental re-extraction after writing new REPORT.md content. The V2 wiki pages will be recompiled on the next full `--v2` ingest run.
+If ingest is interrupted, rerun the same command above to resume.
 
 If the script fails, print `WARN  Knowledge graph update failed (non-blocking)` and continue.
 
 **Verify** the project appears in the graph after ingest:
 
 ```bash
-uv run scripts/query_knowledge_unified.py search "{project_id}" --scope graph
+uv run scripts/query_knowledge_unified.py --scope graph search "{project_id}"
 ```
 
 #### Step 8: Update References

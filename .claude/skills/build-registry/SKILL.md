@@ -35,6 +35,10 @@ This runs the synthesis-backed pipeline:
 5. **Phase 5** — Compile the wiki from the same synthesis bundle.
 6. **Phase 6** — Update the ingest log.
 
+Resume behavior:
+- Ingest now writes per-run checkpoints under `data/ingest/runs/<run_id>/checkpoint.json` and resumes from the first incomplete phase when you rerun the same scope.
+- Wiki compilation caches staged topic pages under `data/ingest/runs/<run_id>/wiki-cache/`, so reruns reuse already compiled pages instead of regenerating them.
+
 Requires `CBORG_API_KEY` env var.
 
 ### Full Rebuild from Scratch
@@ -90,7 +94,7 @@ To use a specific CBORG model: `--model claude-haiku` or `--model gpt-5.4-mini`
 - **Called by**: `/synthesize` (Step 7.6), `/submit` (Step 2), `/berdl_start` (Phase B)
 - **Generates for**: `/knowledge` (query skill), `/suggest-research` (landscape analysis)
 - **Source of truth**: OpenViking (all queries go through OpenViking)
-- **Local durable state**: `data/ingest/` stores per-project registry snapshots and run checkpoints
+- **Local durable state**: `data/ingest/` (gitignored) stores per-project registry snapshots, run checkpoints, and staging/cache artifacts for resumable runs
 
 ## When to Re-ingest
 

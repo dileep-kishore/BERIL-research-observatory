@@ -64,9 +64,9 @@ Run these checks against the project directory and print a checklist summary:
   Print `INFO  Updated knowledge registry for {project_id}`. If the script fails, print `WARN  Registry update failed (non-blocking)` and continue — this is advisory, not blocking.
 - **OpenViking sync**: After the registry update, sync the submitted project into OpenViking and rebuild the knowledge graph incrementally:
   ```bash
-  uv run scripts/viking_ingest.py --rebuild-graph --wait
+  uv run scripts/viking_ingest.py --project {project_id} --wait --wait-timeout 7200
   ```
-  This uploads any new/changed project resources and incrementally rebuilds the knowledge graph (only re-extracting changed projects via CBORG; cached results for others).
+  This uploads project changes and runs resumable ingest with checkpoint state under `data/ingest/runs/`. If interrupted, rerun the same command to resume from the first incomplete phase. Wiki compilation reuses cached pages from `data/ingest/runs/<run_id>/wiki-cache/`.
   Print `INFO  Synced {project_id} into OpenViking` on success. If it fails, print `WARN  OpenViking sync failed (non-blocking)` and continue.
 
 Print the checklist as:
