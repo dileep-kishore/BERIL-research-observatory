@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
 from observatory_context.staging import write_staged_file
+
+logger = logging.getLogger(__name__)
 
 
 class BatchUploader:
@@ -72,7 +75,17 @@ class BatchUploader:
         timeout
             Maximum seconds to wait when ``wait=True``.
         """
-        for attempt in range(8):
+        retry_delays = (1, 2, 4, 8, 16, 30, 30, 30, 30, 30, 30, 30)
+        for attempt, delay in enumerate((0, *retry_delays), start=1):
+            if delay:
+                logger.warning(
+                    "Batch upload lock contention for %s, retrying in %ds (attempt %d/%d)",
+                    target_uri,
+                    delay,
+                    attempt,
+                    len(retry_delays) + 1,
+                )
+                time.sleep(delay)
             try:
                 self.client.batch_add(
                     path=str(staging_dir),
@@ -84,8 +97,7 @@ class BatchUploader:
                 )
                 break
             except Exception as exc:
-                if "lock" in str(exc).lower() and attempt < 7:
-                    time.sleep(min(2 ** attempt, 30))
+                if "lock" in str(exc).lower() and attempt <= len(retry_delays):
                     continue
                 raise
         if wait:

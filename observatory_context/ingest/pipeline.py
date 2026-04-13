@@ -81,6 +81,17 @@ def _format_duration(seconds: float) -> str:
     return f"{seconds}s"
 
 
+def _split_markdown_frontmatter(markdown: str) -> tuple[str, str]:
+    """Split YAML frontmatter from a markdown document."""
+    text = markdown.strip()
+    if not text.startswith("---\n"):
+        return "", markdown.strip()
+    parts = text.split("\n---\n", 1)
+    if len(parts) != 2:
+        return "", markdown.strip()
+    return f"{parts[0]}\n---\n", parts[1].strip()
+
+
 class IngestProgressTracker:
     """Render persistent run + phase status during ingest."""
 
@@ -962,6 +973,37 @@ class IngestPipeline:
                         break
         return project_titles, project_dates
 
+    def _maybe_generate_rich_wiki_page(
+        self,
+        *,
+        extractor: Any | None,
+        page_kind: str,
+        page_label: str,
+        synthesis_payload: dict[str, Any],
+        fallback_content: str,
+        tracker: IngestProgressTracker | None = None,
+    ) -> str:
+        """Optionally rewrite one wiki page with the LLM, falling back on failure."""
+        if (
+            extractor is None
+            or getattr(extractor, "supports_wiki_generation", False) is not True
+            or not hasattr(extractor, "generate_wiki_page_from_synthesis")
+        ):
+            return fallback_content
+        try:
+            if tracker is not None:
+                tracker.set_note(f"Generating rich {page_kind} page")
+            rewritten_body = extractor.generate_wiki_page_from_synthesis(page_kind, synthesis_payload)
+            frontmatter, _ = _split_markdown_frontmatter(fallback_content)
+            if frontmatter:
+                return f"{frontmatter}\n{rewritten_body.strip()}\n"
+            return rewritten_body
+        except Exception as exc:
+            logger.warning("Wiki page generation failed for %s: %s", page_label, exc)
+            if tracker is not None:
+                tracker.set_note(f"Falling back to deterministic {page_kind} page")
+            return fallback_content
+
     def build_synthesis_bundle(
         self,
         manifest: list[ResourceManifestItem],
@@ -1014,6 +1056,7 @@ class IngestPipeline:
             build_observatory_root_uri(),
             reason="Phase 4 knowledge-graph export",
             wait=True,
+            preserve_structure=True,
         )
         if tracker is not None:
             tracker.advance(note="Files uploaded and processed")
@@ -1039,6 +1082,7 @@ class IngestPipeline:
         bundle: KnowledgeSynthesisBundle,
         findings: list[Finding] | None = None,
         hypotheses: list[Hypothesis] | None = None,
+        extractor: Any | None = None,
     ) -> int:
         """Compile wiki pages from registry entries and upload them.
 
@@ -1083,11 +1127,20 @@ class IngestPipeline:
             from observatory_context.uris import _ENTITY_TYPE_PLURALS
 
             for entity in bundle.entities:
-                tracker.set_item(f"entity/{entity.slug}", note="Compiling entity page")
+                page_label = f"entity/{entity.slug}"
+                tracker.set_item(page_label, note="Compiling entity page")
                 content = compile_entity_page_from_synthesis(
                     entity,
                     findings_by_id=findings_by_id,
                     hypotheses_by_id=hypotheses_by_id,
+                )
+                content = self._maybe_generate_rich_wiki_page(
+                    extractor=extractor,
+                    page_kind="entity",
+                    page_label=page_label,
+                    synthesis_payload=entity.model_dump(mode="json", exclude_none=True),
+                    fallback_content=content,
+                    tracker=tracker,
                 )
                 plural = _ENTITY_TYPE_PLURALS.get(entity.entity_type, f"{entity.entity_type}s")
                 rel_path = f"entities/{plural}/{entity.slug}.md"
@@ -1105,11 +1158,20 @@ class IngestPipeline:
                 tracker.advance(note="Entity page staged")
 
             for hypothesis in bundle.hypotheses:
-                tracker.set_item(f"hypothesis/{hypothesis.slug}", note="Compiling hypothesis page")
+                page_label = f"hypothesis/{hypothesis.slug}"
+                tracker.set_item(page_label, note="Compiling hypothesis page")
                 content = compile_hypothesis_page_from_synthesis(
                     hypothesis,
                     findings_by_id=findings_by_id,
                     hypotheses_by_id=hypotheses_by_id,
+                )
+                content = self._maybe_generate_rich_wiki_page(
+                    extractor=extractor,
+                    page_kind="hypothesis",
+                    page_label=page_label,
+                    synthesis_payload=hypothesis.model_dump(mode="json", exclude_none=True),
+                    fallback_content=content,
+                    tracker=tracker,
                 )
                 rel_path = f"hypotheses/{hypothesis.slug}.md"
                 self.uploader.stage(wiki_staging, rel_path, content)
@@ -1126,11 +1188,20 @@ class IngestPipeline:
                 tracker.advance(note="Hypothesis page staged")
 
             for topic in bundle.topics:
-                tracker.set_item(f"topic/{topic.slug}", note="Compiling topic page")
+                page_label = f"topic/{topic.slug}"
+                tracker.set_item(page_label, note="Compiling topic page")
                 content = compile_topic_page_from_synthesis(
                     topic,
                     findings_by_id=findings_by_id,
                     hypotheses_by_id=hypotheses_by_id,
+                )
+                content = self._maybe_generate_rich_wiki_page(
+                    extractor=extractor,
+                    page_kind="topic",
+                    page_label=page_label,
+                    synthesis_payload=topic.model_dump(mode="json", exclude_none=True),
+                    fallback_content=content,
+                    tracker=tracker,
                 )
                 rel_path = f"topics/{topic.slug}.md"
                 self.uploader.stage(wiki_staging, rel_path, content)
@@ -1164,6 +1235,13 @@ class IngestPipeline:
                         findings_by_id=findings_by_id,
                         hypotheses_by_id=hypotheses_by_id,
                     )
+                    content = self._maybe_generate_rich_wiki_page(
+                        extractor=extractor,
+                        page_kind="entity",
+                        page_label=f"entity/{entity.slug}",
+                        synthesis_payload=entity.model_dump(mode="json", exclude_none=True),
+                        fallback_content=content,
+                    )
                     plural = _ENTITY_TYPE_PLURALS.get(entity.entity_type, f"{entity.entity_type}s")
                     rel_path = f"entities/{plural}/{entity.slug}.md"
                     self.uploader.stage(wiki_staging, rel_path, content)
@@ -1186,6 +1264,13 @@ class IngestPipeline:
                         findings_by_id=findings_by_id,
                         hypotheses_by_id=hypotheses_by_id,
                     )
+                    content = self._maybe_generate_rich_wiki_page(
+                        extractor=extractor,
+                        page_kind="hypothesis",
+                        page_label=f"hypothesis/{hypothesis.slug}",
+                        synthesis_payload=hypothesis.model_dump(mode="json", exclude_none=True),
+                        fallback_content=content,
+                    )
                     rel_path = f"hypotheses/{hypothesis.slug}.md"
                     self.uploader.stage(wiki_staging, rel_path, content)
                     wiki_entries.append(
@@ -1206,6 +1291,13 @@ class IngestPipeline:
                         topic,
                         findings_by_id=findings_by_id,
                         hypotheses_by_id=hypotheses_by_id,
+                    )
+                    content = self._maybe_generate_rich_wiki_page(
+                        extractor=extractor,
+                        page_kind="topic",
+                        page_label=f"topic/{topic.slug}",
+                        synthesis_payload=topic.model_dump(mode="json", exclude_none=True),
+                        fallback_content=content,
                     )
                     rel_path = f"topics/{topic.slug}.md"
                     self.uploader.stage(wiki_staging, rel_path, content)
@@ -1236,6 +1328,7 @@ class IngestPipeline:
             target_uri,
             reason="Phase 5 wiki compilation",
             wait=True,
+            preserve_structure=True,
         )
 
         elapsed = tracker.complete_phase(f"{page_count} wiki pages compiled") if tracker is not None else None
@@ -1247,10 +1340,17 @@ class IngestPipeline:
         manifest: list[ResourceManifestItem],
         findings: list[Finding] | None = None,
         hypotheses: list[Hypothesis] | None = None,
+        extractor: Any | None = None,
     ) -> int:
         """Compatibility wrapper for older tests and call sites."""
         bundle, _graph = self.build_synthesis_bundle(manifest, findings=findings, hypotheses=hypotheses)
-        return self.phase5_compile_wiki(manifest, bundle, findings=findings, hypotheses=hypotheses)
+        return self.phase5_compile_wiki(
+            manifest,
+            bundle,
+            findings=findings,
+            hypotheses=hypotheses,
+            extractor=extractor,
+        )
 
     def phase5_update_index_and_log(
         self, project_ids: list[str], phase_results: dict[str, int]
@@ -1473,7 +1573,11 @@ class IngestPipeline:
                 current_phase = "wiki"
                 if not self._phase_is_complete(checkpoint, "wiki"):
                     assert bundle is not None
-                    phase_results["wiki"] = self.phase5_compile_wiki(manifest, bundle)
+                    phase_results["wiki"] = self.phase5_compile_wiki(
+                        manifest,
+                        bundle,
+                        extractor=extractor,
+                    )
                     checkpoint = self._mark_phase_completed(checkpoint, "wiki", phase_results["wiki"])
                 else:
                     phase_results["wiki"] = int(checkpoint["phases"]["wiki"].get("count", 0))

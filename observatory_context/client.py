@@ -19,6 +19,7 @@ class OpenVikingObservatoryClient:
     """Lazy OpenViking client wrapper used by repo scripts."""
 
     _STALE_LOCK_IDLE_SECONDS = 30.0
+    _TRANSIENT_RETRY_DELAYS = (1.0, 2.0, 4.0)
 
     def __init__(self, settings: ObservatoryContextSettings) -> None:
         self.settings = settings
@@ -167,12 +168,18 @@ class OpenVikingObservatoryClient:
         return f"{directory}/{name}"
 
     def make_directory(self, uri: str) -> None:
-        try:
-            self.client.mkdir(uri)
-        except Exception as exc:
-            if self._is_already_exists_error(exc):
+        for attempt, delay in enumerate((0.0, *self._TRANSIENT_RETRY_DELAYS), start=1):
+            if delay:
+                time.sleep(delay)
+            try:
+                self.client.mkdir(uri)
                 return
-            raise
+            except Exception as exc:
+                if self._is_already_exists_error(exc):
+                    return
+                if attempt <= len(self._TRANSIENT_RETRY_DELAYS) and self._is_transient_transport_error(exc):
+                    continue
+                raise
 
     def _is_already_exists_error(self, exc: Exception) -> bool:
         if any(cls.__name__ == "AlreadyExistsError" for cls in type(exc).__mro__):
@@ -180,6 +187,20 @@ class OpenVikingObservatoryClient:
         if any(cls.__name__ == "InternalError" for cls in type(exc).__mro__):
             return "already exists" in str(exc).lower()
         return False
+
+    def _is_transient_transport_error(self, exc: Exception) -> bool:
+        transient_names = {
+            "ReadError",
+            "WriteError",
+            "ConnectError",
+            "ReadTimeout",
+            "WriteTimeout",
+            "ConnectTimeout",
+            "PoolTimeout",
+            "RemoteProtocolError",
+            "TransportError",
+        }
+        return any(cls.__name__ in transient_names for cls in type(exc).__mro__)
 
     def health(self) -> bool:
         return bool(self.client.health())

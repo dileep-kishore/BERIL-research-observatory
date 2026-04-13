@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 from pydantic import ValidationError
 
@@ -226,3 +228,29 @@ def test_max_output_tokens_can_be_lowered_explicitly() -> None:
     )
 
     assert extractor._max_output_tokens == 4096
+
+
+def test_generate_wiki_page_from_synthesis_uses_structured_payload() -> None:
+    extractor = _make_extractor()
+    extractor._chat = MagicMock(return_value="## Rich Page\n\nExpanded body.\n")
+
+    page = extractor.generate_wiki_page_from_synthesis(
+        "topic",
+        {
+            "topic_id": "topic-1",
+            "slug": "topic-1",
+            "title": "Example Topic",
+            "project_ids": ["proj-a"],
+            "abstract": "Synthesized abstract.",
+            "overview": "Synthesized overview.",
+        },
+    )
+
+    call = extractor._chat.call_args
+    assert call is not None
+    assert "Structured payload" in call.kwargs["user"]
+    assert '"title": "Example Topic"' in call.kwargs["user"]
+    assert "Draft markdown body" not in call.kwargs["user"]
+    assert not page.startswith("---")
+    assert "## Rich Page" in page
+    assert page.endswith("\n")

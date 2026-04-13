@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, ValidationError
 logger = logging.getLogger(__name__)
 _DEFAULT_EXTRACTION_MAX_OUTPUT_TOKENS = 16_384
 _INPUT_HEADROOM_RATIO = 0.9
+_DEFAULT_WIKI_PAGE_MAX_OUTPUT_TOKENS = 1_600
 _MODEL_TOKEN_LIMITS: tuple[tuple[str, int, int], ...] = (
     ("amazon/claude-haiku-4-5", 200_000, 64_000),
     ("claude-haiku-4-5", 200_000, 8_192),
@@ -238,6 +239,7 @@ class CBORGExtractor:
     """
 
     supports_batch_extraction = False
+    supports_wiki_generation = True
 
     def __init__(
         self,
@@ -352,6 +354,138 @@ class CBORGExtractor:
         )
         return self._chat(system=system, user=content, max_tokens=max_tokens)
 
+    def generate_wiki_page(
+        self,
+        page_kind: str,
+        draft_markdown: str,
+        max_tokens: int = _DEFAULT_WIKI_PAGE_MAX_OUTPUT_TOKENS,
+    ) -> str:
+        """Rewrite a deterministic wiki draft into a richer per-page narrative.
+
+        Parameters
+        ----------
+        page_kind:
+            One of ``entity``, ``hypothesis``, or ``topic``.
+        draft_markdown:
+            Deterministic wiki markdown, including YAML frontmatter.
+        max_tokens:
+            Maximum output tokens for the rewritten page body.
+
+        Returns
+        -------
+        str
+            Markdown page with original frontmatter and a richer body.
+
+        Raises
+        ------
+        ValueError
+            If the wiki page prompt exceeds the hard input limit.
+        """
+        frontmatter, body = self._split_frontmatter(draft_markdown)
+        system = (
+            "You are writing a rich scientific wiki page for a research observatory. "
+            "Rewrite the supplied draft into clear, information-dense markdown. "
+            "Stay faithful to the draft, preserve existing markdown links, do not invent facts, "
+            "and return markdown body only with no YAML frontmatter."
+        )
+        prompt = (
+            f"Page type: {page_kind}\n\n"
+            "Rewrite this observatory wiki draft into a richer page.\n"
+            "Requirements:\n"
+            "- Keep the title and section structure sensible for the page type\n"
+            "- Preserve all existing markdown links exactly when they appear\n"
+            "- Emphasize cross-project synthesis, evidence, and open questions when available\n"
+            "- Do not add unsupported claims or citations\n"
+            "- Return markdown body only\n\n"
+            f"Draft markdown body:\n{body}"
+        )
+        estimated_tokens = self._estimate_prompt_tokens(system, prompt)
+        hard_input_limit = self._hard_input_limit_tokens()
+        if hard_input_limit is not None and estimated_tokens > hard_input_limit:
+            raise ValueError(
+                f"Wiki page prompt too large (~{estimated_tokens} tokens) for hard skip limit "
+                f"({hard_input_limit} tokens; model max input {self._max_input_tokens})"
+            )
+        rewritten_body = self._chat(
+            system=system,
+            user=prompt,
+            max_tokens=min(max_tokens, self._max_output_tokens),
+        ).strip()
+        rewritten_body = rewritten_body.lstrip("`").rstrip()
+        if frontmatter:
+            return f"{frontmatter}\n{rewritten_body}\n"
+        return f"{rewritten_body}\n"
+
+    def generate_wiki_page_from_synthesis(
+        self,
+        page_kind: str,
+        synthesis: dict[str, Any],
+        max_tokens: int = _DEFAULT_WIKI_PAGE_MAX_OUTPUT_TOKENS,
+    ) -> str:
+        """Rewrite a structured synthesis payload into a richer wiki page body.
+
+        Parameters
+        ----------
+        page_kind:
+            One of ``entity``, ``hypothesis``, or ``topic``.
+        synthesis:
+            Structured synthesis payload for a single page. This must already
+            contain the page's canonical fields and cross-project summaries.
+        max_tokens:
+            Maximum output tokens for the rewritten page body.
+
+        Returns
+        -------
+        str
+            Markdown body only, with no YAML frontmatter.
+
+        Raises
+        ------
+        ValueError
+            If the wiki page prompt exceeds the hard input limit.
+        """
+        system = (
+            "You are writing a rich scientific wiki page for a research observatory. "
+            "Rewrite the supplied structured synthesis into clear, information-dense markdown. "
+            "Stay faithful to the provided synthesis data, do not invent facts, and return "
+            "markdown body only with no YAML frontmatter."
+        )
+        payload = {
+            "page_kind": page_kind,
+            "synthesis": synthesis,
+        }
+        prompt = (
+            "Rewrite this observatory wiki page using ONLY the structured synthesis payload below.\n"
+            "Requirements:\n"
+            "- Use the payload as the sole source of truth\n"
+            "- Do not refer to raw report text or unstated evidence\n"
+            "- Keep the page human-readable and information-dense\n"
+            "- Emphasize cross-project synthesis, evidence, open questions, and significance when available\n"
+            "- Preserve the page type focus:\n"
+            "  - entity: identity, aliases, community context, cross-project evidence, related entities\n"
+            "  - hypothesis: statement, status, support/refutation, related evidence, open questions\n"
+            "  - topic: thematic synthesis, cross-project patterns, methods, conditions, gaps\n"
+            "- Return markdown body only\n\n"
+            f"Structured payload:\n{json.dumps(payload, indent=2, sort_keys=True, default=str)}"
+        )
+        estimated_tokens = self._estimate_prompt_tokens(system, prompt)
+        hard_input_limit = self._hard_input_limit_tokens()
+        if hard_input_limit is not None and estimated_tokens > hard_input_limit:
+            raise ValueError(
+                f"Wiki synthesis prompt too large (~{estimated_tokens} tokens) for hard skip limit "
+                f"({hard_input_limit} tokens; model max input {self._max_input_tokens})"
+            )
+        rewritten_body = self._chat(
+            system=system,
+            user=prompt,
+            max_tokens=min(max_tokens, self._max_output_tokens),
+        ).strip()
+        rewritten_body = rewritten_body.lstrip("`").rstrip()
+        frontmatter, body = self._split_frontmatter(rewritten_body)
+        if frontmatter:
+            return f"{body}\n"
+        return f"{rewritten_body}\n"
+
     def _build_extraction_prompt(self, report: str, provenance: dict) -> str:
         """Format the user-turn extraction prompt.
 
@@ -384,6 +518,15 @@ class CBORGExtractor:
 
     def _estimate_text_tokens(self, text: str) -> int:
         return len(text) // 4
+
+    def _split_frontmatter(self, markdown: str) -> tuple[str, str]:
+        text = markdown.strip()
+        if not text.startswith("---\n"):
+            return "", markdown.strip()
+        parts = text.split("\n---\n", 1)
+        if len(parts) != 2:
+            return "", markdown.strip()
+        return f"{parts[0]}\n---\n", parts[1].strip()
 
     def _estimate_prompt_tokens(self, system: str, user: str) -> int:
         return self._estimate_text_tokens(system) + self._estimate_text_tokens(user)

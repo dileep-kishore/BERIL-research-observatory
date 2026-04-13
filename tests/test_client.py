@@ -12,12 +12,15 @@ from observatory_context.config import ObservatoryContextSettings
 
 
 class _FakeMkdirClient:
-    def __init__(self, exc: Exception | None = None) -> None:
+    def __init__(self, exc: Exception | None = None, exceptions: list[Exception] | None = None) -> None:
         self.exc = exc
+        self.exceptions = deque(exceptions or [])
         self.calls: list[str] = []
 
     def mkdir(self, uri: str) -> None:
         self.calls.append(uri)
+        if self.exceptions:
+            raise self.exceptions.popleft()
         if self.exc is not None:
             raise self.exc
 
@@ -80,6 +83,28 @@ def test_make_directory_reraises_other_internal_errors() -> None:
 
     with pytest.raises(InternalError, match="database unavailable"):
         client.make_directory("viking://resources/observatory/example")
+
+
+def test_make_directory_retries_transient_read_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ReadError(Exception):
+        pass
+
+    fake = _FakeMkdirClient(exceptions=[ReadError("boom"), ReadError("boom")])
+    client = _make_client(fake)
+    sleeps: list[float] = []
+
+    monkeypatch.setattr("observatory_context.client.time.sleep", sleeps.append)
+
+    client.make_directory("viking://resources/observatory/example")
+
+    assert fake.calls == [
+        "viking://resources/observatory/example",
+        "viking://resources/observatory/example",
+        "viking://resources/observatory/example",
+    ]
+    assert sleeps == [1.0, 2.0]
 
 
 @pytest.mark.parametrize(

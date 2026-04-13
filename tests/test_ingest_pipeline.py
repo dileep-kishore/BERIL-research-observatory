@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -344,8 +345,47 @@ def test_phase3_compiles_wiki_from_staged_registry(pipeline, mock_client, tmp_pa
     wiki_staging = pipeline.staging_root / "wiki"
     assert wiki_staging.exists()
     assert (wiki_staging / "index.md").exists()
+    assert mock_client.batch_add.call_args.kwargs["preserve_structure"] is True
 
     index_content = (wiki_staging / "index.md").read_text()
+    assert "Observatory Wiki Index" in index_content
+
+
+def test_phase3_compile_wiki_uses_llm_per_page_when_available(pipeline, mock_client, tmp_path):
+    manifest = _make_manifest_with_report(tmp_path)
+    extractor = _make_mock_extractor()
+    pipeline.phase2_extract_and_register(manifest, extractor=extractor)
+
+    page_extractor = MagicMock()
+    page_extractor.supports_wiki_generation = True
+    page_extractor.generate_wiki_page_from_synthesis.side_effect = lambda kind, payload: (
+        f"## Rich {kind}\n\n{payload.get('abstract', 'Expanded synthesis.')}\n"
+    )
+
+    count = pipeline.phase3_compile_wiki(manifest, extractor=page_extractor)
+
+    assert count >= 3
+    assert page_extractor.generate_wiki_page_from_synthesis.call_count >= 2
+    first_call = page_extractor.generate_wiki_page_from_synthesis.call_args_list[0]
+    assert isinstance(first_call.args[1], dict)
+    assert "Draft markdown body" not in json.dumps(first_call.args[1])
+
+
+def test_phase3_compile_wiki_falls_back_when_llm_page_generation_fails(
+    pipeline, mock_client, tmp_path
+):
+    manifest = _make_manifest_with_report(tmp_path)
+    extractor = _make_mock_extractor()
+    pipeline.phase2_extract_and_register(manifest, extractor=extractor)
+
+    page_extractor = MagicMock()
+    page_extractor.supports_wiki_generation = True
+    page_extractor.generate_wiki_page_from_synthesis.side_effect = RuntimeError("boom")
+
+    count = pipeline.phase3_compile_wiki(manifest, extractor=page_extractor)
+
+    assert count >= 3
+    index_content = (pipeline.staging_root / "wiki" / "index.md").read_text()
     assert "Observatory Wiki Index" in index_content
 
 
