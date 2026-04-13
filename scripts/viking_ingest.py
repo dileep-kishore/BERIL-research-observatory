@@ -99,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--from-scratch", action="store_true",
-        help="Clear local ingest and graph state before starting a new run.",
+        help="Clear local ingest, run checkpoints, and staging caches before starting a new run.",
     )
     parser.add_argument(
         "--restart-from",
@@ -109,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--no-checkpoint-resume", action="store_true",
-        help="Do not auto-resume the latest incomplete matching run.",
+        help="Do not auto-resume the latest incomplete matching run or reuse cached phase checkpoints.",
     )
     return parser
 
@@ -241,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
         except TimeoutError as exc:
             console.print(f"[yellow]Warning:[/] {exc}")
 
+    console.print(f"[dim]Local ingest state: {REPO_ROOT / 'data' / 'ingest'}[/]")
     console.print(f"\n[bold green]Done![/] {results}")
     return 0
 

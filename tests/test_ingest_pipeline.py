@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -78,6 +79,8 @@ def test_pipeline_default_staging_root(mock_client, tmp_path):
     p = IngestPipeline(client=mock_client, repo_root=tmp_path)
     assert p.staging_root is not None
     assert p.staging_root.exists()
+    assert p.staging_root.is_relative_to(tmp_path / "data" / "ingest")
+    assert p.staging_root == tmp_path / "data" / "ingest" / "staging"
 
 
 def test_phase1_builds_corpus_manifest(pipeline, mock_client, tmp_path):
@@ -217,9 +220,6 @@ def test_phase2_extracts_and_stages_registry(pipeline, mock_client, tmp_path):
     extractor.extract_knowledge.assert_called_once()
 
     # Check that registry files were staged
-    registry_staging = pipeline.staging_root / "registry"
-    findings_files = list((registry_staging / "findings").glob("*.yaml"))
-    hyp_files = list((registry_staging / "hypotheses").glob("*.yaml"))
 
 
 def test_phase2_extracts_each_project_separately(pipeline, mock_client, tmp_path):
@@ -286,6 +286,49 @@ def test_phase2_clears_persisted_state_when_project_report_disappears(
     findings, hypotheses = pipeline._load_persisted_entries()
     assert findings == []
     assert hypotheses == []
+
+
+def test_phase2_resume_skips_projects_marked_completed_in_checkpoint(
+    pipeline, mock_client, tmp_path
+):
+    manifest_a = _make_manifest_with_report(tmp_path, project_id="proj-a")
+    manifest_b = _make_manifest_with_report(tmp_path, project_id="proj-b")
+    manifest = manifest_a + manifest_b
+
+    seed_extractor = _make_mock_extractor(
+        _make_extraction_for_project("proj-a", organism="Alpha bacterium", gene="geneA")
+    )
+    pipeline.phase2_extract_and_register(manifest_a, extractor=seed_extractor)
+
+    checkpoint = pipeline._create_checkpoint(  # type: ignore[attr-defined]
+        run_id="phase2-resume-test",
+        project_ids=["proj-a", "proj-b"],
+        resume_phase1=False,
+    )
+    checkpoint["phases"]["registry"] = {
+        "status": "running",
+        "count": 2,
+        "projects": {
+            "proj-a": {
+                "status": "completed",
+                "count": 2,
+            }
+        },
+    }
+    pipeline._save_checkpoint(checkpoint)  # type: ignore[attr-defined]
+
+    resume_extractor = _make_mock_extractor(
+        _make_extraction_for_project("proj-b", organism="Beta bacterium", gene="geneB")
+    )
+    count = pipeline.phase2_extract_and_register(
+        manifest,
+        extractor=resume_extractor,
+        checkpoint=checkpoint,
+    )
+
+    assert resume_extractor.extract_knowledge.call_count == 1
+    assert count == 4
+    assert checkpoint["phases"]["registry"]["projects"]["proj-b"]["status"] == "completed"
 
 
 def test_phase3_rebuilds_from_persisted_registry_state_across_projects(
@@ -417,6 +460,69 @@ def test_phase3_with_explicit_entries(pipeline, mock_client, tmp_path):
     # hypothesis page + topic page + index = 3 minimum (no entity pages since no related_entities)
     assert count >= 2
     mock_client.batch_add.assert_called()
+
+
+def test_phase5_resumes_from_cached_pages_without_regenerating_them(
+    pipeline,
+    mock_client,
+    tmp_path,
+):
+    """Phase 5 should reuse cached wiki pages instead of recomputing them."""
+    manifest = _make_manifest_with_report(tmp_path)
+    extractor = _make_mock_extractor()
+    pipeline.phase2_extract_and_register(manifest, extractor=extractor)
+
+    bundle, _graph = pipeline.build_synthesis_bundle(manifest)
+    assert bundle.hypotheses
+
+    run_id = "wiki-resume-test"
+    checkpoint = pipeline._create_checkpoint(  # type: ignore[attr-defined]
+        run_id=run_id,
+        project_ids=["test-proj"],
+        resume_phase1=False,
+    )
+
+    hypothesis = bundle.hypotheses[0]
+    rel_path = f"hypotheses/{hypothesis.slug}.md"
+    cache_path = pipeline._wiki_cache_path(run_id, rel_path)  # type: ignore[attr-defined]
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cached_body = "# Cached hypothesis page\n"
+    cache_path.write_text(cached_body, encoding="utf-8")
+
+    checkpoint["phases"]["wiki"] = {
+        "status": "running",
+        "count": 1,
+        "pages": {
+            f"hypothesis/{hypothesis.slug}": {
+                "status": "completed",
+                "rel_path": rel_path,
+                "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            }
+        },
+    }
+    pipeline._save_checkpoint(checkpoint)  # type: ignore[attr-defined]
+
+    page_extractor = MagicMock()
+    page_extractor.supports_wiki_generation = True
+    page_extractor.generate_wiki_page_from_synthesis.side_effect = (
+        lambda kind, payload: f"## Rich {kind}\n\n{payload.get('title', payload.get('statement', 'Expanded synthesis.'))}\n"
+    )
+
+    expected_pages = len(bundle.entities) + len(bundle.hypotheses) + len(bundle.topics) + 1
+    count = pipeline.phase5_compile_wiki(
+        manifest,
+        bundle,
+        extractor=page_extractor,
+        checkpoint=checkpoint,
+    )
+
+    assert count == expected_pages
+    assert page_extractor.generate_wiki_page_from_synthesis.call_count == (
+        len(bundle.entities) + len(bundle.hypotheses) + len(bundle.topics) - 1
+    )
+    assert (pipeline.staging_root / "wiki" / rel_path).read_text(encoding="utf-8") == cached_body
+    assert (pipeline.staging_root / "wiki" / "index.md").exists()
+    assert checkpoint["phases"]["wiki"]["pages"][f"hypothesis/{hypothesis.slug}"]["status"] == "completed"
 
 
 # ------------------------------------------------------------------

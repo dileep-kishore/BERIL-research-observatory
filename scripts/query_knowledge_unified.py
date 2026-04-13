@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Unified query backend for BERIL knowledge — delegates all queries via ContextDelivery."""
+"""Unified query backend for BERIL knowledge.
+
+Delegates all queries via ContextDelivery and reads the compiled wiki output
+produced by the resumable ingest pipeline in `scripts/viking_ingest.py`.
+"""
 
 from __future__ import annotations
-
-import warnings
-
-warnings.filterwarnings("ignore", message="urllib3.*or chardet.*doesn't match")
 
 import argparse
 import json
 import sys
+import warnings
 
 from observatory_context.delivery import ContextDelivery
 from observatory_context.models import (
@@ -23,6 +24,8 @@ from observatory_context.uris import (
     build_knowledge_graph_uri,
     build_project_workspace_uri,
 )
+
+warnings.filterwarnings("ignore", message="urllib3.*or chardet.*doesn't match")
 
 DELIVERY: ContextDelivery
 
@@ -186,7 +189,8 @@ def _handle_project(args) -> int:
 
     print(
         f"Error: Project '{args.project_id}' not found in OpenViking.\n"
-        f"Run '/build-registry' to ingest projects, or check the project ID.",
+        f"Run '/build-registry' to ingest projects, or check the project ID.\n"
+        f"Local ingest checkpoints and staging state are under data/ingest/.",
         file=sys.stderr,
     )
     return 1
@@ -460,7 +464,7 @@ def _handle_stat(args) -> int:
 
 
 def _handle_wiki_index(args) -> int:
-    """Show the wiki master index."""
+    """Show the wiki master index compiled by the resumable ingest pipeline."""
     from observatory_context.uris import build_wiki_index_uri
 
     try:
@@ -472,7 +476,7 @@ def _handle_wiki_index(args) -> int:
 
 
 def _handle_wiki_topic(args) -> int:
-    """Show a wiki topic synthesis page."""
+    """Show a wiki topic synthesis page compiled by the resumable ingest pipeline."""
     from observatory_context.uris import build_wiki_topic_uri
 
     uri = build_wiki_topic_uri(args.slug)

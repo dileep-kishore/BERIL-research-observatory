@@ -9,7 +9,6 @@ import time
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import mkdtemp
 from typing import Any
 from uuid import uuid4
 
@@ -28,7 +27,6 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from observatory_context._text import slugify
 from observatory_context.client import OpenVikingObservatoryClient
 from observatory_context.graph.builder import GraphBuilder
 from observatory_context.graph.knowledge_graph_export import KnowledgeGraphExporter
@@ -265,7 +263,7 @@ class IngestPipeline:
         Root of the BERIL observatory repository.
     staging_root
         Local directory used for staging files before upload.
-        Created as a temp directory if not provided.
+        Defaults to ``data/ingest/staging`` when not provided.
     """
 
     def __init__(
@@ -276,12 +274,12 @@ class IngestPipeline:
     ) -> None:
         self.client = client
         self.repo_root = repo_root
-        self.staging_root = staging_root or Path(mkdtemp(prefix="observatory-ingest-"))
-        self.uploader = BatchUploader(client)
-        self._tracker: IngestProgressTracker | None = None
         self.state_root = self.repo_root / "data" / "ingest"
         self.registry_state_root = self.state_root / "registry" / "projects"
         self.runs_root = self.state_root / "runs"
+        self.staging_root = staging_root or (self.state_root / "staging")
+        self.uploader = BatchUploader(client)
+        self._tracker: IngestProgressTracker | None = None
         self._ensure_state_dirs()
 
     # ------------------------------------------------------------------
@@ -291,6 +289,7 @@ class IngestPipeline:
     def _ensure_state_dirs(self) -> None:
         self.registry_state_root.mkdir(parents=True, exist_ok=True)
         self.runs_root.mkdir(parents=True, exist_ok=True)
+        self.staging_root.mkdir(parents=True, exist_ok=True)
 
     def clear_local_state(self) -> None:
         """Remove local durable ingest state and graph artifacts."""
@@ -375,11 +374,13 @@ class IngestPipeline:
         phase: str,
         count: int,
     ) -> dict[str, Any]:
-        checkpoint["phases"][phase] = {
+        phase_state = dict(checkpoint["phases"].get(phase, {}))
+        phase_state.update({
             "status": "completed",
             "count": count,
             "completed_at": datetime.now(tz=timezone.utc).isoformat(),
-        }
+        })
+        checkpoint["phases"][phase] = phase_state
         self._save_checkpoint(checkpoint)
         return checkpoint
 
@@ -390,12 +391,14 @@ class IngestPipeline:
         exc: Exception,
     ) -> None:
         checkpoint["status"] = "failed"
-        checkpoint["phases"][phase] = {
+        phase_state = dict(checkpoint["phases"].get(phase, {}))
+        phase_state.update({
             "status": "failed",
             "count": checkpoint["phases"][phase].get("count", 0),
             "error": str(exc),
             "failed_at": datetime.now(tz=timezone.utc).isoformat(),
-        }
+        })
+        checkpoint["phases"][phase] = phase_state
         self._save_checkpoint(checkpoint)
 
     def _reset_from_phase(self, checkpoint: dict[str, Any], phase: str) -> dict[str, Any]:
@@ -405,6 +408,134 @@ class IngestPipeline:
         checkpoint["status"] = "running"
         self._save_checkpoint(checkpoint)
         return checkpoint
+
+    def _registry_phase_state(self, checkpoint: dict[str, Any]) -> dict[str, Any]:
+        phase_state = checkpoint["phases"].setdefault("registry", {"status": "pending", "count": 0})
+        phase_state.setdefault("projects", {})
+        return phase_state
+
+    def _mark_registry_project_completed(self, checkpoint: dict[str, Any], project_id: str, count: int) -> None:
+        registry_state = self._registry_phase_state(checkpoint)
+        projects = registry_state.setdefault("projects", {})
+        projects[project_id] = {
+            "status": "completed",
+            "count": count,
+            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        registry_state["count"] = sum(
+            int(project.get("count", 0))
+            for project in projects.values()
+            if project.get("status") == "completed"
+        )
+        self._save_checkpoint(checkpoint)
+
+    def _mark_registry_project_failed(self, checkpoint: dict[str, Any], project_id: str, exc: Exception) -> None:
+        registry_state = self._registry_phase_state(checkpoint)
+        projects = registry_state.setdefault("projects", {})
+        projects[project_id] = {
+            "status": "failed",
+            "count": 0,
+            "error": str(exc),
+            "failed_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        registry_state["count"] = sum(
+            int(project.get("count", 0))
+            for project in projects.values()
+            if project.get("status") == "completed"
+        )
+        self._save_checkpoint(checkpoint)
+
+    def _mark_registry_project_skipped(self, checkpoint: dict[str, Any], project_id: str, reason: str) -> None:
+        registry_state = self._registry_phase_state(checkpoint)
+        projects = registry_state.setdefault("projects", {})
+        projects[project_id] = {
+            "status": "skipped",
+            "count": 0,
+            "reason": reason,
+            "skipped_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        registry_state["count"] = sum(
+            int(project.get("count", 0))
+            for project in projects.values()
+            if project.get("status") == "completed"
+        )
+        self._save_checkpoint(checkpoint)
+
+    def _load_project_entries(self, project_id: str) -> list[Finding | Hypothesis]:
+        project_dir = self.registry_state_root / project_id
+        entries: list[Finding | Hypothesis] = []
+        findings_dir = project_dir / "findings"
+        hypotheses_dir = project_dir / "hypotheses"
+        if findings_dir.exists():
+            for path in sorted(findings_dir.glob("*.yaml")):
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                if data:
+                    entries.append(Finding.model_validate(data))
+        if hypotheses_dir.exists():
+            for path in sorted(hypotheses_dir.glob("*.yaml")):
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                if data:
+                    entries.append(Hypothesis.model_validate(data))
+        return entries
+
+    def _registry_project_is_resumable(
+        self,
+        checkpoint: dict[str, Any],
+        project_id: str,
+    ) -> bool:
+        phase_state = self._registry_phase_state(checkpoint)
+        projects = phase_state.get("projects", {})
+        project_state = projects.get(project_id)
+        if not project_state or project_state.get("status") != "completed":
+            return False
+        return (self.registry_state_root / project_id).exists()
+
+    def _run_dir(self, run_id: str) -> Path:
+        return self.runs_root / run_id
+
+    def _wiki_cache_root(self, run_id: str) -> Path:
+        return self._run_dir(run_id) / "wiki-cache"
+
+    def _wiki_cache_path(self, run_id: str, rel_path: str) -> Path:
+        return self._wiki_cache_root(run_id) / rel_path
+
+    def _wiki_phase_state(self, checkpoint: dict[str, Any]) -> dict[str, Any]:
+        phase_state = checkpoint["phases"].setdefault("wiki", {"status": "pending", "count": 0})
+        phase_state.setdefault("pages", {})
+        return phase_state
+
+    def _mark_wiki_page_completed(self, checkpoint: dict[str, Any], page_label: str, rel_path: str) -> None:
+        wiki_state = self._wiki_phase_state(checkpoint)
+        pages = wiki_state.setdefault("pages", {})
+        pages[page_label] = {
+            "status": "completed",
+            "rel_path": rel_path,
+            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        wiki_state["status"] = "running"
+        wiki_state["count"] = sum(1 for page in pages.values() if page.get("status") == "completed")
+        self._save_checkpoint(checkpoint)
+
+    def _mark_wiki_page_pending(self, checkpoint: dict[str, Any], page_label: str, rel_path: str) -> None:
+        wiki_state = self._wiki_phase_state(checkpoint)
+        pages = wiki_state.setdefault("pages", {})
+        pages[page_label] = {
+            "status": "pending",
+            "rel_path": rel_path,
+        }
+        wiki_state["count"] = sum(1 for page in pages.values() if page.get("status") == "completed")
+        self._save_checkpoint(checkpoint)
+
+    def _restore_wiki_page_from_cache(self, run_id: str, wiki_staging: Path, rel_path: str) -> str:
+        cache_path = self._wiki_cache_path(run_id, rel_path)
+        content = cache_path.read_text(encoding="utf-8")
+        self.uploader.stage(wiki_staging, rel_path, content)
+        return content
+
+    def _persist_wiki_page_cache(self, run_id: str, rel_path: str, content: str) -> None:
+        cache_path = self._wiki_cache_path(run_id, rel_path)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(content, encoding="utf-8")
 
     def _prepare_run(
         self,
@@ -601,6 +732,7 @@ class IngestPipeline:
         self,
         manifest: list[ResourceManifestItem],
         extractor: Any | None = None,
+        checkpoint: dict[str, Any] | None = None,
     ) -> int:
         """Extract knowledge from project reports and upload registry entries.
 
@@ -631,62 +763,56 @@ class IngestPipeline:
 
         all_entries: list[Finding | Hypothesis] = []
         tracker = self._tracker
+        if checkpoint is not None:
+            self._registry_phase_state(checkpoint)
         if tracker is not None:
             tracker.start_phase("Phase 2: Extracting knowledge", len(project_ids), note="Loading project reports")
-            for pid in project_ids:
+
+        for pid in project_ids:
+            if tracker is not None:
                 tracker.set_item(pid, note="Reading report")
-                report_path = self.repo_root / "projects" / pid / "REPORT.md"
-                if not report_path.exists():
-                    self._persist_project_entries(pid, [])
-                    tracker.advance(note="No REPORT.md, skipped")
-                    continue
 
-                report_text = report_path.read_text(encoding="utf-8")
-                prov_path = self.repo_root / "projects" / pid / "provenance.yaml"
-                provenance: dict = {}
-                if prov_path.exists():
-                    provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
-                try:
-                    tracker.set_note("Calling CBORG extractor")
-                    extraction = extractor.extract_knowledge(report_text, provenance)
-                except (ValueError, Exception) as exc:
-                    logger.warning("Extraction failed for %s: %s", pid, exc)
-                    self._persist_project_entries(pid, [])
-                    tracker.advance(note=f"Skipped after extraction error: {exc}")
-                    continue
-
-                entries = extraction_to_registry_entries(extraction, pid)
-                self._persist_project_entries(pid, entries)
+            if checkpoint is not None and self._registry_project_is_resumable(checkpoint, pid):
+                entries = self._load_project_entries(pid)
                 all_entries.extend(entries)
+                if tracker is not None:
+                    tracker.advance(note=f"Reused {len(entries)} persisted registry entries")
+                continue
+
+            report_path = self.repo_root / "projects" / pid / "REPORT.md"
+            if not report_path.exists():
+                self._persist_project_entries(pid, [])
+                if checkpoint is not None:
+                    self._mark_registry_project_skipped(checkpoint, pid, "No REPORT.md")
+                if tracker is not None:
+                    tracker.advance(note="No REPORT.md, skipped")
+                continue
+
+            report_text = report_path.read_text(encoding="utf-8")
+            prov_path = self.repo_root / "projects" / pid / "provenance.yaml"
+            provenance: dict = {}
+            if prov_path.exists():
+                provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
+            try:
+                if tracker is not None:
+                    tracker.set_note("Calling CBORG extractor")
+                extraction = extractor.extract_knowledge(report_text, provenance)
+            except (ValueError, Exception) as exc:
+                logger.warning("Extraction failed for %s: %s", pid, exc)
+                self._persist_project_entries(pid, [])
+                if checkpoint is not None:
+                    self._mark_registry_project_failed(checkpoint, pid, exc)
+                if tracker is not None:
+                    tracker.advance(note=f"Skipped after extraction error: {exc}")
+                continue
+
+            entries = extraction_to_registry_entries(extraction, pid)
+            self._persist_project_entries(pid, entries)
+            all_entries.extend(entries)
+            if checkpoint is not None:
+                self._mark_registry_project_completed(checkpoint, pid, len(entries))
+            if tracker is not None:
                 tracker.advance(note=f"Persisted {len(entries)} registry entries")
-        else:
-            with _make_progress() as progress:
-                task = progress.add_task("Phase 2: Extracting knowledge", total=len(project_ids))
-                for pid in project_ids:
-                    progress.update(task, description=f"Phase 2: {pid}")
-                    report_path = self.repo_root / "projects" / pid / "REPORT.md"
-                    if not report_path.exists():
-                        self._persist_project_entries(pid, [])
-                        progress.advance(task)
-                        continue
-
-                    report_text = report_path.read_text(encoding="utf-8")
-                    prov_path = self.repo_root / "projects" / pid / "provenance.yaml"
-                    provenance: dict = {}
-                    if prov_path.exists():
-                        provenance = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
-                    try:
-                        extraction = extractor.extract_knowledge(report_text, provenance)
-                    except (ValueError, Exception) as exc:
-                        logger.warning("Extraction failed for %s: %s", pid, exc)
-                        self._persist_project_entries(pid, [])
-                        progress.advance(task)
-                        continue
-
-                    entries = extraction_to_registry_entries(extraction, pid)
-                    self._persist_project_entries(pid, entries)
-                    all_entries.extend(entries)
-                    progress.advance(task)
 
         staged_count = self._stage_registry_snapshot(registry_staging)
         if staged_count:
@@ -1083,6 +1209,7 @@ class IngestPipeline:
         findings: list[Finding] | None = None,
         hypotheses: list[Hypothesis] | None = None,
         extractor: Any | None = None,
+        checkpoint: dict[str, Any] | None = None,
     ) -> int:
         """Compile wiki pages from registry entries and upload them.
 
@@ -1105,6 +1232,10 @@ class IngestPipeline:
         if findings is None or hypotheses is None:
             findings, hypotheses = self._load_persisted_entries()
 
+        run_id = checkpoint["run_id"] if checkpoint is not None else None
+        if checkpoint is not None:
+            self._wiki_phase_state(checkpoint)
+
         if not bundle.entities and not bundle.hypotheses and not bundle.topics:
             if self._tracker is not None:
                 self._tracker.start_phase("Phase 5: Compiling wiki", 1, note="Skipped (empty synthesis bundle)")
@@ -1122,29 +1253,70 @@ class IngestPipeline:
         hypotheses_by_id = {hypothesis.hypothesis_id: hypothesis for hypothesis in hypotheses}
         total_pages = len(bundle.entities) + len(bundle.hypotheses) + len(bundle.topics) + 1
         tracker = self._tracker
+        from observatory_context.uris import _ENTITY_TYPE_PLURALS
+
+        def _build_entity_content(entity: Any, page_label: str) -> str:
+            content = compile_entity_page_from_synthesis(
+                entity,
+                findings_by_id=findings_by_id,
+                hypotheses_by_id=hypotheses_by_id,
+            )
+            return self._maybe_generate_rich_wiki_page(
+                extractor=extractor,
+                page_kind="entity",
+                page_label=page_label,
+                synthesis_payload=entity.model_dump(mode="json", exclude_none=True),
+                fallback_content=content,
+                tracker=tracker,
+            )
+
+        def _build_hypothesis_content(hypothesis: Any, page_label: str) -> str:
+            content = compile_hypothesis_page_from_synthesis(
+                hypothesis,
+                findings_by_id=findings_by_id,
+                hypotheses_by_id=hypotheses_by_id,
+            )
+            return self._maybe_generate_rich_wiki_page(
+                extractor=extractor,
+                page_kind="hypothesis",
+                page_label=page_label,
+                synthesis_payload=hypothesis.model_dump(mode="json", exclude_none=True),
+                fallback_content=content,
+                tracker=tracker,
+            )
+
+        def _build_topic_content(topic: Any, page_label: str) -> str:
+            content = compile_topic_page_from_synthesis(
+                topic,
+                findings_by_id=findings_by_id,
+                hypotheses_by_id=hypotheses_by_id,
+            )
+            return self._maybe_generate_rich_wiki_page(
+                extractor=extractor,
+                page_kind="topic",
+                page_label=page_label,
+                synthesis_payload=topic.model_dump(mode="json", exclude_none=True),
+                fallback_content=content,
+                tracker=tracker,
+            )
+
         if tracker is not None:
             tracker.start_phase("Phase 5: Compiling wiki", total_pages, note="Rendering wiki pages")
-            from observatory_context.uris import _ENTITY_TYPE_PLURALS
 
             for entity in bundle.entities:
                 page_label = f"entity/{entity.slug}"
-                tracker.set_item(page_label, note="Compiling entity page")
-                content = compile_entity_page_from_synthesis(
-                    entity,
-                    findings_by_id=findings_by_id,
-                    hypotheses_by_id=hypotheses_by_id,
-                )
-                content = self._maybe_generate_rich_wiki_page(
-                    extractor=extractor,
-                    page_kind="entity",
-                    page_label=page_label,
-                    synthesis_payload=entity.model_dump(mode="json", exclude_none=True),
-                    fallback_content=content,
-                    tracker=tracker,
-                )
                 plural = _ENTITY_TYPE_PLURALS.get(entity.entity_type, f"{entity.entity_type}s")
                 rel_path = f"entities/{plural}/{entity.slug}.md"
-                self.uploader.stage(wiki_staging, rel_path, content)
+                cache_path = self._wiki_cache_path(run_id, rel_path) if run_id is not None else None
+                cache_hit = cache_path is not None and cache_path.exists()
+                tracker.set_item(page_label, note="Cached entity page restored" if cache_hit else "Compiling entity page")
+                if cache_hit:
+                    self._restore_wiki_page_from_cache(run_id, wiki_staging, rel_path)
+                else:
+                    content = _build_entity_content(entity, page_label)
+                    if run_id is not None:
+                        self._persist_wiki_page_cache(run_id, rel_path, content)
+                    self.uploader.stage(wiki_staging, rel_path, content)
                 wiki_entries.append(
                     WikiEntry(
                         slug=entity.slug,
@@ -1155,26 +1327,23 @@ class IngestPipeline:
                     )
                 )
                 page_count += 1
-                tracker.advance(note="Entity page staged")
+                if checkpoint is not None:
+                    self._mark_wiki_page_completed(checkpoint, page_label, rel_path)
+                tracker.advance(note="Cached entity page restored" if cache_hit else "Entity page staged")
 
             for hypothesis in bundle.hypotheses:
                 page_label = f"hypothesis/{hypothesis.slug}"
-                tracker.set_item(page_label, note="Compiling hypothesis page")
-                content = compile_hypothesis_page_from_synthesis(
-                    hypothesis,
-                    findings_by_id=findings_by_id,
-                    hypotheses_by_id=hypotheses_by_id,
-                )
-                content = self._maybe_generate_rich_wiki_page(
-                    extractor=extractor,
-                    page_kind="hypothesis",
-                    page_label=page_label,
-                    synthesis_payload=hypothesis.model_dump(mode="json", exclude_none=True),
-                    fallback_content=content,
-                    tracker=tracker,
-                )
                 rel_path = f"hypotheses/{hypothesis.slug}.md"
-                self.uploader.stage(wiki_staging, rel_path, content)
+                cache_path = self._wiki_cache_path(run_id, rel_path) if run_id is not None else None
+                cache_hit = cache_path is not None and cache_path.exists()
+                tracker.set_item(page_label, note="Cached hypothesis page restored" if cache_hit else "Compiling hypothesis page")
+                if cache_hit:
+                    self._restore_wiki_page_from_cache(run_id, wiki_staging, rel_path)
+                else:
+                    content = _build_hypothesis_content(hypothesis, page_label)
+                    if run_id is not None:
+                        self._persist_wiki_page_cache(run_id, rel_path, content)
+                    self.uploader.stage(wiki_staging, rel_path, content)
                 wiki_entries.append(
                     WikiEntry(
                         slug=hypothesis.slug,
@@ -1185,26 +1354,23 @@ class IngestPipeline:
                     )
                 )
                 page_count += 1
-                tracker.advance(note="Hypothesis page staged")
+                if checkpoint is not None:
+                    self._mark_wiki_page_completed(checkpoint, page_label, rel_path)
+                tracker.advance(note="Cached hypothesis page restored" if cache_hit else "Hypothesis page staged")
 
             for topic in bundle.topics:
                 page_label = f"topic/{topic.slug}"
-                tracker.set_item(page_label, note="Compiling topic page")
-                content = compile_topic_page_from_synthesis(
-                    topic,
-                    findings_by_id=findings_by_id,
-                    hypotheses_by_id=hypotheses_by_id,
-                )
-                content = self._maybe_generate_rich_wiki_page(
-                    extractor=extractor,
-                    page_kind="topic",
-                    page_label=page_label,
-                    synthesis_payload=topic.model_dump(mode="json", exclude_none=True),
-                    fallback_content=content,
-                    tracker=tracker,
-                )
                 rel_path = f"topics/{topic.slug}.md"
-                self.uploader.stage(wiki_staging, rel_path, content)
+                cache_path = self._wiki_cache_path(run_id, rel_path) if run_id is not None else None
+                cache_hit = cache_path is not None and cache_path.exists()
+                tracker.set_item(page_label, note="Cached topic page restored" if cache_hit else "Compiling topic page")
+                if cache_hit:
+                    self._restore_wiki_page_from_cache(run_id, wiki_staging, rel_path)
+                else:
+                    content = _build_topic_content(topic, page_label)
+                    if run_id is not None:
+                        self._persist_wiki_page_cache(run_id, rel_path, content)
+                    self.uploader.stage(wiki_staging, rel_path, content)
                 wiki_entries.append(
                     WikiEntry(
                         slug=topic.slug,
@@ -1215,36 +1381,44 @@ class IngestPipeline:
                     )
                 )
                 page_count += 1
-                tracker.advance(note="Topic page staged")
+                if checkpoint is not None:
+                    self._mark_wiki_page_completed(checkpoint, page_label, rel_path)
+                tracker.advance(note="Cached topic page restored" if cache_hit else "Topic page staged")
 
-            tracker.set_item("index", note="Compiling index page")
-            index_content = build_index_markdown(wiki_entries)
-            self.uploader.stage(wiki_staging, "index.md", index_content)
+            index_label = "index"
+            index_rel_path = "index.md"
+            index_cache_path = self._wiki_cache_path(run_id, index_rel_path) if run_id is not None else None
+            index_cache_hit = index_cache_path is not None and index_cache_path.exists()
+            tracker.set_item(index_label, note="Cached index page restored" if index_cache_hit else "Compiling index page")
+            if index_cache_hit:
+                self._restore_wiki_page_from_cache(run_id, wiki_staging, index_rel_path)
+            else:
+                index_content = build_index_markdown(wiki_entries)
+                if run_id is not None:
+                    self._persist_wiki_page_cache(run_id, index_rel_path, index_content)
+                self.uploader.stage(wiki_staging, index_rel_path, index_content)
             page_count += 1
-            tracker.advance(note="Index page staged")
+            if checkpoint is not None:
+                self._mark_wiki_page_completed(checkpoint, index_label, index_rel_path)
+            tracker.advance(note="Cached index page restored" if index_cache_hit else "Index page staged")
         else:
             with _make_progress() as progress:
                 task = progress.add_task("Phase 5: Compiling wiki", total=total_pages)
 
-                from observatory_context.uris import _ENTITY_TYPE_PLURALS
-
                 for entity in bundle.entities:
-                    progress.update(task, description=f"Phase 5: entity/{entity.slug}")
-                    content = compile_entity_page_from_synthesis(
-                        entity,
-                        findings_by_id=findings_by_id,
-                        hypotheses_by_id=hypotheses_by_id,
-                    )
-                    content = self._maybe_generate_rich_wiki_page(
-                        extractor=extractor,
-                        page_kind="entity",
-                        page_label=f"entity/{entity.slug}",
-                        synthesis_payload=entity.model_dump(mode="json", exclude_none=True),
-                        fallback_content=content,
-                    )
+                    page_label = f"entity/{entity.slug}"
                     plural = _ENTITY_TYPE_PLURALS.get(entity.entity_type, f"{entity.entity_type}s")
                     rel_path = f"entities/{plural}/{entity.slug}.md"
-                    self.uploader.stage(wiki_staging, rel_path, content)
+                    cache_path = self._wiki_cache_path(run_id, rel_path) if run_id is not None else None
+                    cache_hit = cache_path is not None and cache_path.exists()
+                    progress.update(task, description=f"Phase 5: cached entity/{entity.slug}" if cache_hit else f"Phase 5: entity/{entity.slug}")
+                    if cache_hit:
+                        self._restore_wiki_page_from_cache(run_id, wiki_staging, rel_path)
+                    else:
+                        content = _build_entity_content(entity, page_label)
+                        if run_id is not None:
+                            self._persist_wiki_page_cache(run_id, rel_path, content)
+                        self.uploader.stage(wiki_staging, rel_path, content)
                     wiki_entries.append(
                         WikiEntry(
                             slug=entity.slug,
@@ -1255,24 +1429,23 @@ class IngestPipeline:
                         )
                     )
                     page_count += 1
+                    if checkpoint is not None:
+                        self._mark_wiki_page_completed(checkpoint, page_label, rel_path)
                     progress.advance(task)
 
                 for hypothesis in bundle.hypotheses:
-                    progress.update(task, description=f"Phase 5: hypothesis/{hypothesis.slug}")
-                    content = compile_hypothesis_page_from_synthesis(
-                        hypothesis,
-                        findings_by_id=findings_by_id,
-                        hypotheses_by_id=hypotheses_by_id,
-                    )
-                    content = self._maybe_generate_rich_wiki_page(
-                        extractor=extractor,
-                        page_kind="hypothesis",
-                        page_label=f"hypothesis/{hypothesis.slug}",
-                        synthesis_payload=hypothesis.model_dump(mode="json", exclude_none=True),
-                        fallback_content=content,
-                    )
+                    page_label = f"hypothesis/{hypothesis.slug}"
                     rel_path = f"hypotheses/{hypothesis.slug}.md"
-                    self.uploader.stage(wiki_staging, rel_path, content)
+                    cache_path = self._wiki_cache_path(run_id, rel_path) if run_id is not None else None
+                    cache_hit = cache_path is not None and cache_path.exists()
+                    progress.update(task, description=f"Phase 5: cached hypothesis/{hypothesis.slug}" if cache_hit else f"Phase 5: hypothesis/{hypothesis.slug}")
+                    if cache_hit:
+                        self._restore_wiki_page_from_cache(run_id, wiki_staging, rel_path)
+                    else:
+                        content = _build_hypothesis_content(hypothesis, page_label)
+                        if run_id is not None:
+                            self._persist_wiki_page_cache(run_id, rel_path, content)
+                        self.uploader.stage(wiki_staging, rel_path, content)
                     wiki_entries.append(
                         WikiEntry(
                             slug=hypothesis.slug,
@@ -1283,24 +1456,23 @@ class IngestPipeline:
                         )
                     )
                     page_count += 1
+                    if checkpoint is not None:
+                        self._mark_wiki_page_completed(checkpoint, page_label, rel_path)
                     progress.advance(task)
 
                 for topic in bundle.topics:
-                    progress.update(task, description=f"Phase 5: topic/{topic.slug}")
-                    content = compile_topic_page_from_synthesis(
-                        topic,
-                        findings_by_id=findings_by_id,
-                        hypotheses_by_id=hypotheses_by_id,
-                    )
-                    content = self._maybe_generate_rich_wiki_page(
-                        extractor=extractor,
-                        page_kind="topic",
-                        page_label=f"topic/{topic.slug}",
-                        synthesis_payload=topic.model_dump(mode="json", exclude_none=True),
-                        fallback_content=content,
-                    )
+                    page_label = f"topic/{topic.slug}"
                     rel_path = f"topics/{topic.slug}.md"
-                    self.uploader.stage(wiki_staging, rel_path, content)
+                    cache_path = self._wiki_cache_path(run_id, rel_path) if run_id is not None else None
+                    cache_hit = cache_path is not None and cache_path.exists()
+                    progress.update(task, description=f"Phase 5: cached topic/{topic.slug}" if cache_hit else f"Phase 5: topic/{topic.slug}")
+                    if cache_hit:
+                        self._restore_wiki_page_from_cache(run_id, wiki_staging, rel_path)
+                    else:
+                        content = _build_topic_content(topic, page_label)
+                        if run_id is not None:
+                            self._persist_wiki_page_cache(run_id, rel_path, content)
+                        self.uploader.stage(wiki_staging, rel_path, content)
                     wiki_entries.append(
                         WikiEntry(
                             slug=topic.slug,
@@ -1311,12 +1483,25 @@ class IngestPipeline:
                         )
                     )
                     page_count += 1
+                    if checkpoint is not None:
+                        self._mark_wiki_page_completed(checkpoint, page_label, rel_path)
                     progress.advance(task)
 
-                progress.update(task, description="Phase 5: index")
-                index_content = build_index_markdown(wiki_entries)
-                self.uploader.stage(wiki_staging, "index.md", index_content)
+                index_label = "index"
+                index_rel_path = "index.md"
+                index_cache_path = self._wiki_cache_path(run_id, index_rel_path) if run_id is not None else None
+                index_cache_hit = index_cache_path is not None and index_cache_path.exists()
+                progress.update(task, description="Phase 5: cached index" if index_cache_hit else "Phase 5: index")
+                if index_cache_hit:
+                    self._restore_wiki_page_from_cache(run_id, wiki_staging, index_rel_path)
+                else:
+                    index_content = build_index_markdown(wiki_entries)
+                    if run_id is not None:
+                        self._persist_wiki_page_cache(run_id, index_rel_path, index_content)
+                    self.uploader.stage(wiki_staging, index_rel_path, index_content)
                 page_count += 1
+                if checkpoint is not None:
+                    self._mark_wiki_page_completed(checkpoint, index_label, index_rel_path)
                 progress.advance(task)
 
         # Upload wiki batch
@@ -1536,7 +1721,11 @@ class IngestPipeline:
 
                 current_phase = "registry"
                 if not self._phase_is_complete(checkpoint, "registry"):
-                    phase_results["registry"] = self.phase2_extract_and_register(manifest, extractor=extractor)
+                    phase_results["registry"] = self.phase2_extract_and_register(
+                        manifest,
+                        extractor=extractor,
+                        checkpoint=checkpoint,
+                    )
                     checkpoint = self._mark_phase_completed(checkpoint, "registry", phase_results["registry"])
                 else:
                     phase_results["registry"] = int(checkpoint["phases"]["registry"].get("count", 0))
@@ -1577,6 +1766,7 @@ class IngestPipeline:
                         manifest,
                         bundle,
                         extractor=extractor,
+                        checkpoint=checkpoint,
                     )
                     checkpoint = self._mark_phase_completed(checkpoint, "wiki", phase_results["wiki"])
                 else:
